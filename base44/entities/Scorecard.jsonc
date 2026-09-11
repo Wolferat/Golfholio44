@@ -38,6 +38,9 @@
     },
     "scores": {
       "type": "object"
+    },
+    "tournament_id": {
+      "type": "string"
     }
   },
   "required": [

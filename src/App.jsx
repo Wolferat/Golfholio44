@@ -16,6 +16,7 @@ import Explore from './pages/Explore';
 import Play from './pages/Play';
 import ScorecardLive from './pages/ScorecardLive';
 import TeeTimes from './pages/TeeTimes';
+import TournamentLive from './pages/TournamentLive';
 import Crew from './pages/Crew';
 import Profile from '@/pages/Profile';
 import Admin from './pages/Admin';
@@ -55,6 +56,7 @@ const AuthenticatedApp = () => {
           <Route path="/" element={<Explore />} />
           <Route path="/play" element={<Play />} />
           <Route path="/play/:id" element={<ScorecardLive />} />
+          <Route path="/tournament/:id" element={<TournamentLive />} />
           <Route path="/tee-times" element={<TeeTimes />} />
           <Route path="/crew" element={<Crew />} />
           <Route path="/profile" element={<Profile />} />

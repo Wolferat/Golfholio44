@@ -4,26 +4,27 @@
 
 @layer base {
   :root {
-    /* Golfolio — premium native: charcoal, golf-green, emerald, ivory */
-    --background: 150 14% 7%;
-    --foreground: 210 40% 98%;
-    --card: 150 13% 10%;
-    --card-foreground: 210 40% 98%;
-    --popover: 150 14% 9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 142 71% 45%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 150 12% 16%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 150 12% 14%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 160 84% 39%;
-    --accent-foreground: 210 40% 98%;
+    /* Golfolio — Night Golf: charcoal, emerald glow, ivory */
+    --background: 150 14% 5%;
+    --foreground: 150 60% 97%;
+    --card: 150 13% 9%;
+    --card-foreground: 150 60% 97%;
+    --popover: 150 14% 7%;
+    --popover-foreground: 150 60% 97%;
+    --primary: 160 84% 40%;
+    --primary-foreground: 150 84% 6%;
+    --secondary: 150 12% 14%;
+    --secondary-foreground: 150 60% 97%;
+    --muted: 150 12% 12%;
+    --muted-foreground: 150 12% 58%;
+    --accent: 160 84% 40%;
+    --accent-foreground: 150 84% 6%;
     --destructive: 0 72% 56%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 150 12% 16%;
-    --input: 150 12% 14%;
-    --ring: 142 71% 45%;
+    --destructive-foreground: 150 60% 97%;
+    --border: 150 14% 15%;
+    --input: 150 12% 13%;
+    --ring: 160 84% 40%;
+    --rating: 45 95% 62%;
     --chart-1: 142 71% 45%;
     --chart-2: 160 84% 39%;
     --chart-3: 197 37% 50%;
@@ -45,25 +46,26 @@
   }
 
   .dark {
-    --background: 150 14% 7%;
-    --foreground: 210 40% 98%;
-    --card: 150 13% 10%;
-    --card-foreground: 210 40% 98%;
-    --popover: 150 14% 9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 142 71% 45%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 150 12% 16%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 150 12% 14%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 160 84% 39%;
-    --accent-foreground: 210 40% 98%;
+    --background: 150 14% 5%;
+    --foreground: 150 60% 97%;
+    --card: 150 13% 9%;
+    --card-foreground: 150 60% 97%;
+    --popover: 150 14% 7%;
+    --popover-foreground: 150 60% 97%;
+    --primary: 160 84% 40%;
+    --primary-foreground: 150 84% 6%;
+    --secondary: 150 12% 14%;
+    --secondary-foreground: 150 60% 97%;
+    --muted: 150 12% 12%;
+    --muted-foreground: 150 12% 58%;
+    --accent: 160 84% 40%;
+    --accent-foreground: 150 84% 6%;
     --destructive: 0 72% 56%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 150 12% 16%;
-    --input: 150 12% 14%;
-    --ring: 142 71% 45%;
+    --destructive-foreground: 150 60% 97%;
+    --border: 150 14% 15%;
+    --input: 150 12% 13%;
+    --ring: 160 84% 40%;
+    --rating: 45 95% 62%;
     --sidebar-background: 150 14% 9%;
     --sidebar-foreground: 210 40% 96%;
     --sidebar-primary: 142 71% 45%;
@@ -124,6 +126,7 @@
     animation: shimmer 1.4s ease-in-out infinite;
   }
   .text-balance { text-wrap: balance; }
+  .night-glow { background-image: radial-gradient(circle at 70% 0%, hsl(160 84% 40% / 0.14), transparent 28%); }
 }
 
 @keyframes shimmer {

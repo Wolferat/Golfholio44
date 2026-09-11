@@ -1,18 +1,21 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Search, MapPin, Compass } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search } from 'lucide-react';
 import { motion } from 'framer-motion';
-import ListingCard from '@/components/golf/ListingCard';
+import NightHero from '@/components/golf/NightHero';
+import VenueCard from '@/components/golf/VenueCard';
+import VenueDeckSkeleton from '@/components/golf/VenueDeckSkeleton';
+import GolfersCircle from '@/components/golf/GolfersCircle';
+import LiveTicker from '@/components/golf/LiveTicker';
+import LocationSheet from '@/components/golf/LocationSheet';
 import ListingDetail from '@/components/golf/ListingDetail';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
-import { ListingCardSkeleton } from '@/components/golf/Shimmer';
-import { getListings, searchListings, toggleFavorite, getSavedIds } from '@/lib/golfData';
-import { Image } from '@/components/ui/image';
+import { getListings, searchListings, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
+import { useGolfLocation } from '@/hooks/useGolfLocation';
 import { cn } from '@/lib/utils';
-
-const HERO_IMG = 'https://media.base44.com/images/public/6aa36b30315f233cc3d6a9b6/42aa12ea6_generated_image.png';
 
 const CATEGORIES = [
   { key: 'all', label: 'All' },
@@ -22,26 +25,41 @@ const CATEGORIES = [
   { key: 'training', label: 'Lessons' },
 ];
 
+const CONSENT_KEY = 'golfolio_contacts_consent';
+
 export default function Explore() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(new Set());
   const [selected, setSelected] = useState(null);
-  const { user } = useAuth();
+  const [tournaments, setTournaments] = useState([]);
+  const [golfers, setGolfers] = useState([]);
+  const [consented, setConsented] = useState(() => {
+    try { return localStorage.getItem(CONSENT_KEY) === '1'; } catch { return false; }
+  });
+  const loc = useGolfLocation();
   const initials = (user?.full_name || user?.email || '?').slice(0, 2).toUpperCase();
+
+  const locParam = loc.coords ? { lat: loc.coords.lat, lng: loc.coords.lng } : { near: loc.city };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = query ? await searchListings(query, category) : await getListings(category);
+      const [data, tour] = await Promise.all([
+        query ? searchListings(query, category, locParam) : getListings(category, locParam),
+        getLiveTournaments(),
+      ]);
       setItems(data);
-    } catch (e) {
+      setTournaments(tour);
+    } catch {
       setItems([]);
     }
     setLoading(false);
-  }, [category, query]);
+  }, [category, query, loc.coords, loc.city]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { getSavedIds().then(setSaved).catch(() => {}); }, []);
@@ -56,39 +74,33 @@ export default function Explore() {
   };
 
   return (
-    <div>
+    <div className="night-glow">
       <GlassHeader>
         <div className="h-[60px] px-4 flex items-center justify-between">
           <span className="text-lg font-extrabold tracking-tight">Golfolio</span>
-          <div className="h-9 w-9 rounded-full bg-primary/15 border border-border grid place-items-center text-sm font-bold text-primary">
+          <div className="h-9 w-9 rounded-full bg-primary/15 border border-primary/40 grid place-items-center text-sm font-bold text-primary">
             {initials}
           </div>
         </div>
       </GlassHeader>
 
       <PullToRefresh onRefresh={load}>
-        <div className="relative h-[220px] overflow-hidden">
-          <Image src={HERO_IMG} fittingType="fill" className="absolute inset-0 h-full w-full" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-background/30 to-background" />
-          <div className="absolute bottom-4 left-4 right-4">
-            <span className="inline-flex items-center gap-1.5 rounded-full glass-card border border-border/50 px-3 py-1 text-xs font-semibold">
-              <Compass className="h-3.5 w-3.5 text-accent" /> Explore Top Courses
-            </span>
-            <h1 className="text-[28px] font-extrabold mt-2.5 leading-none">Sherman, TX</h1>
-            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1.5">
-              <MapPin className="h-3.5 w-3.5" /> Within 30 miles
-            </p>
-          </div>
-        </div>
+        <NightHero
+          locationLabel={loc.label}
+          subtitle={loc.subtitle}
+          onOpenLocation={() => loc.setSheetOpen(true)}
+          onUseLocation={loc.useGps}
+          locating={loc.locating}
+        />
 
         <div className="px-4 -mt-6 relative z-10">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search courses, events…"
-              className="h-12 pl-10 glass-card border-border rounded-2xl"
+              className="h-12 pl-10 glass-card border-primary/20 rounded-2xl"
             />
           </div>
         </div>
@@ -111,27 +123,47 @@ export default function Explore() {
           ))}
         </div>
 
-        {loading ? (
-          <div>{[...Array(4)].map((_, i) => <ListingCardSkeleton key={i} />)}</div>
-        ) : items.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground px-4">
-            <Search className="h-10 w-10 mx-auto mb-3 opacity-40" />
-            <p className="font-medium">No listings found</p>
-            <p className="text-xs mt-1">Try a different search or category.</p>
-          </div>
-        ) : (
-          <div>
-            {items.map((item) => (
-              <ListingCard
-                key={item.id}
-                item={item}
-                saved={saved.has(item.id)}
-                onToggleSave={() => handleToggleSave(item.id)}
-                onOpen={() => setSelected(item)}
-              />
-            ))}
+        {tournaments.length > 0 && (
+          <div className="px-4 mb-2">
+            <LiveTicker tournaments={tournaments} onTap={() => navigate(`/tournament/${tournaments[0].id}`)} />
           </div>
         )}
+
+        <div className="px-4 mt-4">
+          <GolfersCircle golfers={golfers} onGolfers={setGolfers} consented={consented} onConsented={setConsented} />
+        </div>
+
+        <section className="px-4 mt-6">
+          <div className="flex items-end justify-between mb-1">
+            <h2 className="text-xl font-extrabold tracking-tight">Near you now</h2>
+            <span className="text-xs text-muted-foreground">{loc.coords ? 'Near you' : 'Within 30 miles'}</span>
+          </div>
+          <motion.div initial={{ width: 0 }} animate={{ width: 56 }} transition={{ duration: 1, ease: 'easeOut' }} className="h-0.5 bg-primary rounded-full mb-3" />
+          {loading ? (
+            <VenueDeckSkeleton />
+          ) : items.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Search className="h-9 w-9 mx-auto mb-3 opacity-40" />
+              <p className="font-medium text-sm">No listings found</p>
+              <p className="text-xs mt-1">Try a different search or category.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3.5">
+              {items.map((item, i) => (
+                <VenueCard
+                  key={item.id}
+                  item={item}
+                  index={i}
+                  saved={saved.has(item.id)}
+                  onToggleSave={() => handleToggleSave(item.id)}
+                  onOpen={() => setSelected(item)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <div className="h-8" />
       </PullToRefresh>
 
       <ListingDetail
@@ -139,6 +171,15 @@ export default function Explore() {
         saved={selected ? saved.has(selected.id) : false}
         onToggleSave={() => selected && handleToggleSave(selected.id)}
         onClose={() => setSelected(null)}
+      />
+      <LocationSheet
+        open={loc.sheetOpen}
+        onClose={() => loc.setSheetOpen(false)}
+        city={loc.city}
+        onSave={loc.saveCity}
+        onUseGps={loc.useGps}
+        locating={loc.locating}
+        hasCoords={!!loc.coords}
       />
     </div>
   );

@@ -41,6 +41,7 @@ module.exports = {
   				DEFAULT: 'hsl(var(--destructive))',
   				foreground: 'hsl(var(--destructive-foreground))'
   			},
+  			rating: 'hsl(var(--rating))',
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
@@ -80,12 +81,17 @@ module.exports = {
   			'shimmer': {
   				'0%': { 'background-position': '200% 0' },
   				'100%': { 'background-position': '-200% 0' }
+  			},
+  			'ticker': {
+  				'0%': { transform: 'translateX(0)' },
+  				'100%': { transform: 'translateX(-50%)' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out',
-  			'shimmer': 'shimmer 1.4s ease-in-out infinite'
+  			'shimmer': 'shimmer 1.4s ease-in-out infinite',
+  			'ticker': 'ticker 22s linear infinite'
   		}
   	}
   },

@@ -3,13 +3,13 @@ import { base44 } from '@/api/base44Client';
 // ============================================================
 // Explore & Saved — live Supabase data via backend functions
 // ============================================================
-export async function getListings(category) {
-  const res = await base44.functions.invoke('getGolfListings', { category });
+export async function getListings(category, loc = {}) {
+  const res = await base44.functions.invoke('getGolfListings', { category, ...loc });
   return res.data.items;
 }
 
-export async function searchListings(query, category) {
-  const res = await base44.functions.invoke('getGolfListings', { query, category });
+export async function searchListings(query, category, loc = {}) {
+  const res = await base44.functions.invoke('getGolfListings', { query, category, ...loc });
   return res.data.items;
 }
 
@@ -30,6 +30,28 @@ export async function getFavorites() {
 export async function toggleFavorite(id) {
   const res = await base44.functions.invoke('toggleSavedListing', { listingId: id });
   return res.data.saved;
+}
+
+export async function getLiveTournaments() {
+  const res = await base44.functions.invoke('getGolfListings', { category: 'charity' });
+  const now = new Date();
+  return (res.data.items || [])
+    .filter((t) => t.startsAt)
+    .map((t) => ({
+      ...t,
+      live: t.live || (new Date(t.startsAt) <= now && (!t.endsAt || new Date(t.endsAt) >= now)),
+    }))
+    .sort((a, b) => (a.live === b.live ? new Date(a.startsAt) - new Date(b.startsAt) : a.live ? -1 : 1));
+}
+
+export async function getTournament(id) {
+  const res = await base44.functions.invoke('getGolfListings', { category: 'charity' });
+  return (res.data.items || []).find((t) => t.id === id) || null;
+}
+
+export async function matchContacts(phones) {
+  const res = await base44.functions.invoke('matchContacts', { phones });
+  return res.data.matches || [];
 }
 
 // ============================================================
