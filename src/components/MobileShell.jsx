@@ -1,12 +1,13 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Compass, Flag, Users, Shield } from 'lucide-react';
+import { Compass, Bookmark, Flag, Users, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const TABS = [
   { to: '/', label: 'Explore', icon: Compass, end: true },
+  { to: '/saved', label: 'Saved', icon: Bookmark, end: false },
   { to: '/my-game', label: 'My Game', icon: Flag, end: false },
   { to: '/crew', label: 'Crew', icon: Users, end: false },
-  { to: '/admin', label: 'Admin', icon: Shield, end: false },
+  { to: '/profile', label: 'Profile', icon: User, end: false },
 ];
 
 export default function MobileShell() {
@@ -19,7 +20,7 @@ export default function MobileShell() {
         className="fixed bottom-0 inset-x-0 z-50 border-t border-border bg-card/90 backdrop-blur-lg"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="max-w-md mx-auto grid grid-cols-4">
+        <div className="max-w-md mx-auto grid grid-cols-5">
           {TABS.map((t) => (
             <NavLink
               key={t.to}
@@ -34,8 +35,8 @@ export default function MobileShell() {
             >
               {({ isActive }) => (
                 <>
-                  <t.icon className="h-[22px] w-[22px]" strokeWidth={isActive ? 2.4 : 2} />
-                  <span className={cn('text-[11px] font-medium tracking-tight', isActive && 'text-foreground')}>
+                  <t.icon className="h-[21px] w-[21px]" strokeWidth={isActive ? 2.4 : 2} />
+                  <span className={cn('text-[10px] font-medium tracking-tight', isActive && 'text-foreground')}>
                     {t.label}
                   </span>
                 </>

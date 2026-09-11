@@ -1,34 +1,43 @@
-// Mock data layer for Golfolio.
-// Structured to mirror Supabase tables (courses, simulators, events, favorites,
-// rounds, crew_connections, crew_requests, pending_photos). These async
-// functions will be replaced by backend-function calls that hit Supabase once
-// the connector is authorized and the schema is inspected.
+import { base44 } from '@/api/base44Client';
 
-const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
+// ============================================================
+// Explore & Saved — live Supabase data via backend functions
+// ============================================================
+export async function getListings(category) {
+  const res = await base44.functions.invoke('getGolfListings', { category });
+  return res.data.items;
+}
 
-const COURSES = [
-  { id: 'c1', type: 'course', name: 'Pine Crest Golf Links', location: 'Monterey, CA', distance: 4.2, rating: 4.7, price: '$$$', holes: 18, blurb: 'Cliffside championship links with ocean views on every hole.' },
-  { id: 'c2', type: 'course', name: 'Oakmont Valley', location: 'Austin, TX', distance: 12.8, rating: 4.4, price: '$$', holes: 18, blurb: 'Tree-lined fairways and fast, rolling greens.' },
-  { id: 'c3', type: 'course', name: 'Desert Mirage CC', location: 'Scottsdale, AZ', distance: 22.1, rating: 4.6, price: '$$$', holes: 18, blurb: 'Desert target golf with mountain backdrops.' },
-  { id: 'c4', type: 'course', name: 'Harbor Pines Par-3', location: 'Portland, OR', distance: 3.1, rating: 4.2, price: '$', holes: 9, blurb: 'Quick 9-hole loop perfect for beginners.' },
-];
+export async function searchListings(query, category) {
+  const res = await base44.functions.invoke('getGolfListings', { query, category });
+  return res.data.items;
+}
 
-const SIMULATORS = [
-  { id: 's1', type: 'simulator', name: 'SwingLab Studio', location: 'Downtown, SF', distance: 1.8, rating: 4.8, price: '$$', blurb: 'TrackMan bays with 80+ virtual courses and league nights.' },
-  { id: 's2', type: 'simulator', name: 'GreenBox Indoor', location: 'Brooklyn, NY', distance: 6.4, rating: 4.5, price: '$$', blurb: 'Year-round indoor bay rental with food and drink service.' },
-];
+export async function getSavedIds() {
+  const res = await base44.functions.invoke('getSavedListings', {});
+  return new Set(res.data.savedIds);
+}
 
-const EVENTS = [
-  { id: 'e1', type: 'event', name: 'Saturday Scramble', location: 'Oakmont Valley, TX', date: '2026-09-19', rating: 4.3, price: '$$', blurb: '4-person scramble, shotgun 8am. Entry includes lunch.' },
-  { id: 'e2', type: 'event', name: 'Twilight 9 & Dine', location: 'Harbor Pines, OR', date: '2026-09-25', rating: 4.6, price: '$', blurb: '9 holes followed by a fireside dinner on the patio.' },
-  { id: 'e3', type: 'event', name: 'Sim League Night', location: 'SwingLab, SF', date: '2026-09-30', rating: 4.7, price: '$', blurb: 'Weekly indoor league — all handicaps welcome.' },
-];
+export async function getFavorites() {
+  const [allRes, savedRes] = await Promise.all([
+    base44.functions.invoke('getGolfListings', { category: 'all' }),
+    base44.functions.invoke('getSavedListings', {}),
+  ]);
+  const savedIds = new Set(savedRes.data.savedIds);
+  return allRes.data.items.filter((i) => savedIds.has(i.id));
+}
 
-const ALL = [...COURSES, ...SIMULATORS, ...EVENTS];
+export async function toggleFavorite(id) {
+  const res = await base44.functions.invoke('toggleSavedListing', { listingId: id });
+  return res.data.saved;
+}
 
-// In-session mock state (mirrors per-user Supabase tables)
+// ============================================================
+// My Game & Crew — mock data (wired to Supabase in a follow-up)
+// ============================================================
+const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));
+
 const state = {
-  favorites: new Set(['c1']),
   rounds: [
     { id: 'r1', date: '2026-09-06', holes: 18, score: 92, notes: 'Solid round, drove it well.' },
     { id: 'r2', date: '2026-08-28', holes: 9, score: 41, notes: 'Quick nine after work.' },
@@ -52,49 +61,16 @@ const state = {
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-export async function getListings(category) {
-  await delay();
-  if (!category || category === 'all') return ALL;
-  return ALL.filter((x) => x.type === category);
-}
-
-export async function searchListings(query, category) {
-  await delay(250);
-  const q = query.trim().toLowerCase();
-  return ALL.filter((x) => {
-    const matchCat = !category || category === 'all' || x.type === category;
-    const matchQ = !q || x.name.toLowerCase().includes(q) || x.location.toLowerCase().includes(q);
-    return matchCat && matchQ;
-  });
-}
-
-export async function getFavorites() {
-  await delay(200);
-  return ALL.filter((x) => state.favorites.has(x.id));
-}
-
-export async function isFavorite(id) {
-  return state.favorites.has(id);
-}
-
-export async function toggleFavorite(id) {
-  if (state.favorites.has(id)) state.favorites.delete(id);
-  else state.favorites.add(id);
-  return state.favorites.has(id);
-}
-
 export async function getRounds() {
-  await delay(200);
+  await delay();
   return [...state.rounds].sort((a, b) => (a.date < b.date ? 1 : -1));
 }
-
 export async function addRound({ holes, score, date, notes }) {
-  await delay(200);
+  await delay();
   const round = { id: uid(), date, holes: Number(holes), score: Number(score), notes };
   state.rounds.push(round);
   return round;
 }
-
 export async function getRoundStats() {
   const rounds = state.rounds;
   if (!rounds.length) return { count: 0, avg: null, best: null };
@@ -102,63 +78,53 @@ export async function getRoundStats() {
   const best = Math.min(...rounds.map((r) => r.score));
   return { count: rounds.length, avg, best };
 }
-
 export async function getCrew() {
-  await delay(200);
+  await delay();
   return state.connections.filter((c) => !state.blocked.has(c.id));
 }
-
 export async function getRequests() {
-  await delay(200);
+  await delay();
   return state.requests;
 }
-
 export async function searchUser(username) {
-  await delay(300);
+  await delay();
   const exact = username.trim().toLowerCase();
   if (!exact) return null;
-  const found = [
+  return [
     { id: 'u9', username: 'links_luke', name: 'Luke Andersen' },
     { id: 'u10', username: 'birdie_kim', name: 'Kim Watanabe' },
-  ].find((u) => u.username.toLowerCase() === exact);
-  return found || null;
+  ].find((u) => u.username.toLowerCase() === exact) || null;
 }
-
 export async function sendRequest(user) {
-  await delay(200);
+  await delay();
   state.requests.push({ id: user.id, username: user.username, name: user.name, status: 'outgoing' });
   return true;
 }
-
 export async function respondRequest(id, action) {
-  await delay(200);
+  await delay();
   const req = state.requests.find((r) => r.id === id);
   if (!req) return false;
   state.requests = state.requests.filter((r) => r.id !== id);
   if (action === 'accept') state.connections.push({ ...req, status: 'connected' });
   return true;
 }
-
 export async function blockUser(id) {
   state.blocked.add(id);
   state.connections = state.connections.filter((c) => c.id !== id);
   state.requests = state.requests.filter((r) => r.id !== id);
   return true;
 }
-
 export async function getPendingPhotos() {
-  await delay(200);
+  await delay();
   return state.pendingPhotos.filter((p) => p.status === 'pending');
 }
-
 export async function getFlaggedListings() {
-  await delay(200);
+  await delay();
   return state.flaggedListings;
 }
-
 export async function reviewPhoto(id, action) {
-  await delay(200);
+  await delay();
   const p = state.pendingPhotos.find((x) => x.id === id);
-  if (p) p.status = action; // 'approved' | 'rejected'
+  if (p) p.status = action;
   return true;
 }

@@ -1,15 +1,22 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import Login from '@/pages/Login';
+import Register from '@/pages/Register';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 import MobileShell from './components/MobileShell';
 import Explore from './pages/Explore';
+import Saved from './pages/Saved';
 import MyGame from './pages/MyGame';
 import Crew from './pages/Crew';
+import Profile from '@/pages/Profile';
 import Admin from './pages/Admin';
 
 const AuthenticatedApp = () => {
@@ -38,11 +45,19 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <Routes>
-      <Route element={<MobileShell />}>
-        <Route path="/" element={<Explore />} />
-        <Route path="/my-game" element={<MyGame />} />
-        <Route path="/crew" element={<Crew />} />
-        <Route path="/admin" element={<Admin />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+        <Route element={<MobileShell />}>
+          <Route path="/" element={<Explore />} />
+          <Route path="/saved" element={<Saved />} />
+          <Route path="/my-game" element={<MyGame />} />
+          <Route path="/crew" element={<Crew />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/admin" element={<Admin />} />
+        </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

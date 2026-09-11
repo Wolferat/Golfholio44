@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Search, MapPin } from 'lucide-react';
 import ListingCard from '@/components/golf/ListingCard';
 import ListingDetail from '@/components/golf/ListingDetail';
-import { getListings, searchListings, toggleFavorite, getFavorites } from '@/lib/golfData';
+import { getListings, searchListings, toggleFavorite, getSavedIds } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -10,7 +10,8 @@ const CATEGORIES = [
   { key: 'all', label: 'All' },
   { key: 'course', label: 'Courses' },
   { key: 'simulator', label: 'Simulators' },
-  { key: 'event', label: 'Events' },
+  { key: 'tournament', label: 'Tournaments' },
+  { key: 'lesson', label: 'Lessons' },
 ];
 
 export default function Explore() {
@@ -23,15 +24,19 @@ export default function Explore() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = query ? await searchListings(query, category) : await getListings(category);
-    setItems(data);
+    try {
+      const data = query ? await searchListings(query, category) : await getListings(category);
+      setItems(data);
+    } catch (e) {
+      setItems([]);
+    }
     setLoading(false);
   }, [category, query]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    getFavorites().then((favs) => setSaved(new Set(favs.map((f) => f.id))));
+    getSavedIds().then(setSaved).catch(() => {});
   }, []);
 
   const handleToggleSave = async (id) => {

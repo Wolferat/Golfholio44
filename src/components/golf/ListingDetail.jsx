@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 
-const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', event: 'Event' };
+const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', charity: 'Tournament', training: 'Lesson' };
 
 export default function ListingDetail({ item, saved, onToggleSave, onClose }) {
   return (

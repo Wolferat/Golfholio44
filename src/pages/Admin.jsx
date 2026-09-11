@@ -3,8 +3,11 @@ import { Check, X, ShieldCheck, ImageOff, Flag } from 'lucide-react';
 import { getPendingPhotos, reviewPhoto, getFlaggedListings } from '@/lib/golfData';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
+import { ShieldAlert } from 'lucide-react';
 
 export default function Admin() {
+  const { user } = useAuth();
   const [tab, setTab] = useState('photos');
   const [photos, setPhotos] = useState([]);
   const [flagged, setFlagged] = useState([]);
@@ -21,6 +24,16 @@ export default function Admin() {
   useEffect(() => { load(); }, [load]);
 
   const handleReview = async (id, action) => { await reviewPhoto(id, action); await load(); };
+
+  if (user?.role !== 'admin') {
+    return (
+      <div className="safe-top px-4 pt-24 text-center text-muted-foreground">
+        <ShieldAlert className="h-8 w-8 mx-auto mb-2 opacity-50" />
+        <p className="font-medium text-foreground">Admin access required</p>
+        <p className="text-xs mt-1">This workspace is for authorized administrators.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="safe-top px-4 pt-4">

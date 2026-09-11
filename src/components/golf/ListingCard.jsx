@@ -2,7 +2,7 @@ import { MapPin, Star, Heart, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 
-const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', event: 'Event' };
+const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', charity: 'Tournament', training: 'Lesson' };
 
 export default function ListingCard({ item, saved, onToggleSave, onOpen }) {
   return (
