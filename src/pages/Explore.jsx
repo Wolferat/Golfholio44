@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import NightHero from '@/components/golf/NightHero';
@@ -14,6 +14,7 @@ import PullToRefresh from '@/components/golf/PullToRefresh';
 import { getListings, searchListings, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
+import { useGate } from '@/components/golf/GateProvider';
 import { useGolfLocation } from '@/hooks/useGolfLocation';
 import { cn } from '@/lib/utils';
 
@@ -30,6 +31,7 @@ const CONSENT_KEY = 'golfolio_contacts_consent';
 export default function Explore() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { gate, isAuthed } = useGate();
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState([]);
@@ -62,9 +64,10 @@ export default function Explore() {
   }, [category, query, loc.coords, loc.city]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { getSavedIds().then(setSaved).catch(() => {}); }, []);
+  useEffect(() => { if (isAuthed) getSavedIds().then(setSaved).catch(() => {}); }, [isAuthed]);
 
   const handleToggleSave = async (id) => {
+    if (!isAuthed) { gate(); return; }
     const isSaved = await toggleFavorite(id);
     setSaved((prev) => {
       const next = new Set(prev);
@@ -78,9 +81,15 @@ export default function Explore() {
       <GlassHeader>
         <div className="h-[60px] px-4 flex items-center justify-between">
           <span className="text-lg font-extrabold tracking-tight">Golfolio</span>
-          <div className="h-9 w-9 rounded-full bg-primary/15 border border-primary/40 grid place-items-center text-sm font-bold text-primary">
-            {initials}
-          </div>
+          {isAuthed ? (
+            <div className="h-9 w-9 rounded-full bg-primary/15 border border-primary/40 grid place-items-center text-sm font-bold text-primary">
+              {initials}
+            </div>
+          ) : (
+            <Link to="/register" className="text-sm font-semibold text-primary/90 hover:text-primary transition">
+              Sign up
+            </Link>
+          )}
         </div>
       </GlassHeader>
 
@@ -125,12 +134,14 @@ export default function Explore() {
 
         {tournaments.length > 0 && (
           <div className="px-4 mb-2">
-            <LiveTicker tournaments={tournaments} onTap={() => navigate(`/tournament/${tournaments[0].id}`)} />
+            <LiveTicker tournaments={tournaments} onTap={() => gate(() => navigate(`/tournament/${tournaments[0].id}`))} />
           </div>
         )}
 
         <div className="px-4 mt-4">
-          <GolfersCircle golfers={golfers} onGolfers={setGolfers} consented={consented} onConsented={setConsented} />
+          {isAuthed && (
+            <GolfersCircle golfers={golfers} onGolfers={setGolfers} consented={consented} onConsented={setConsented} />
+          )}
         </div>
 
         <section className="px-4 mt-6">

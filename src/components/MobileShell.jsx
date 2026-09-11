@@ -2,6 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Compass, Flag, CalendarClock, Users, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { useGate } from '@/components/golf/GateProvider';
 
 const TABS = [
   { to: '/', label: 'Courses', icon: Compass, end: true },
@@ -13,6 +14,7 @@ const TABS = [
 
 export default function MobileShell() {
   const location = useLocation();
+  const { gate, isAuthed } = useGate();
   return (
     <div className="min-h-dvh grid-stage md:flex md:items-start md:justify-center">
       <div className="w-full max-w-md mx-auto bg-background min-h-dvh relative md:border-x md:border-border md:shadow-2xl">
@@ -39,6 +41,12 @@ export default function MobileShell() {
                 key={t.to}
                 to={t.to}
                 end={t.end}
+                onClick={(e) => {
+                  if (t.to !== '/' && !isAuthed) {
+                    e.preventDefault();
+                    gate();
+                  }
+                }}
                 className="flex flex-col items-center justify-center gap-1 no-tap-highlight"
               >
                 {({ isActive }) => (
