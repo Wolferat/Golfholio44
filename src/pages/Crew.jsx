@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Search, UserPlus, Ban, Check, X, Users, Shield } from 'lucide-react';
+import { motion } from 'framer-motion';
+import GlassHeader from '@/components/golf/GlassHeader';
+import { CrewRowSkeleton } from '@/components/golf/Shimmer';
 import { getCrew, getRequests, searchUser, sendRequest, respondRequest, blockUser } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 export default function Crew() {
@@ -38,81 +40,100 @@ export default function Crew() {
   const incoming = requests.filter((r) => r.status === 'incoming');
 
   return (
-    <div className="safe-top px-4 pt-4">
-      <header className="mb-4">
-        <h1 className="text-2xl font-bold font-heading">Crew</h1>
-        <p className="text-sm text-muted-foreground">Connect with golfers by exact username</p>
-      </header>
+    <div>
+      <GlassHeader>
+        <div className="h-[60px] px-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-extrabold leading-none">Crew</h1>
+            <p className="text-xs text-muted-foreground mt-1">Connect with golfers by exact username</p>
+          </div>
+          <Users className="h-5 w-5 text-accent" />
+        </div>
+      </GlassHeader>
 
-      <form className="flex gap-2 mb-4" onSubmit={(e) => { e.preventDefault(); handleSearch(); }}>
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Enter exact username" className="h-11" />
-        <Button type="submit" className="h-11 px-4" disabled={searching || !query.trim()}>
-          <Search className="h-4 w-4" />
-        </Button>
-      </form>
+      <div className="sticky top-[calc(60px+env(safe-area-inset-top))] z-30 glass border-b border-border px-4 py-3">
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); handleSearch(); }}>
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Enter exact username" className="h-11 glass-card border-border rounded-2xl" />
+          <motion.button whileTap={{ scale: 0.92 }} type="submit" disabled={searching || !query.trim()} className="h-11 w-11 rounded-2xl bg-primary text-primary-foreground grid place-items-center disabled:opacity-50">
+            <Search className="h-4 w-4" />
+          </motion.button>
+        </form>
+      </div>
 
-      {searching && <div className="text-center text-sm text-muted-foreground py-3">Searching…</div>}
+      {searching && <div className="text-center text-sm text-muted-foreground py-4">Searching…</div>}
       {result === null && !searching && (
-        <div className="text-center text-sm text-muted-foreground py-3">No golfer found with that username.</div>
+        <div className="text-center text-sm text-muted-foreground py-4">No golfer found with that username.</div>
       )}
       {result && (
-        <div className="rounded-xl bg-card border border-border p-3 mb-4 flex items-center gap-3">
+        <div className="m-4 rounded-2xl bg-card border border-border p-3 flex items-center gap-3">
           <Avatar><AvatarFallback className="bg-primary text-primary-foreground">{result.name.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
           <div className="flex-1 min-w-0">
             <div className="font-semibold truncate">{result.name}</div>
             <div className="text-xs text-muted-foreground">@{result.username}</div>
           </div>
-          <Button size="sm" onClick={() => handleSend(result)} className="h-9"><UserPlus className="h-4 w-4 mr-1" />Add</Button>
-          <Button size="sm" variant="secondary" onClick={() => handleBlock(result.id)} className="h-9"><Ban className="h-4 w-4" /></Button>
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => handleSend(result)} className="h-9 px-3 rounded-full bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-1">
+            <UserPlus className="h-4 w-4" />Add
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => handleBlock(result.id)} className="h-9 w-9 rounded-full bg-secondary grid place-items-center">
+            <Ban className="h-4 w-4" />
+          </motion.button>
         </div>
       )}
 
       {incoming.length > 0 && (
         <>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Requests</h2>
-          <div className="space-y-2 mb-5">
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 px-4 mt-2">Requests</h2>
+          <div className="mb-4">
             {incoming.map((r) => (
-              <div key={r.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-3">
+              <div key={r.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
                 <Avatar><AvatarFallback className="bg-secondary">{r.name.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold truncate">{r.name}</div>
                   <div className="text-xs text-muted-foreground">@{r.username}</div>
                 </div>
-                <Button size="sm" onClick={() => handleRespond(r.id, 'accept')} className="h-9"><Check className="h-4 w-4" /></Button>
-                <Button size="sm" variant="secondary" onClick={() => handleRespond(r.id, 'decline')} className="h-9"><X className="h-4 w-4" /></Button>
+                <motion.button whileTap={{ scale: 0.88 }} onClick={() => handleRespond(r.id, 'accept')} className="h-9 w-9 rounded-full bg-accent text-accent-foreground grid place-items-center">
+                  <Check className="h-4 w-4" strokeWidth={3} />
+                </motion.button>
+                <motion.button whileTap={{ scale: 0.88 }} onClick={() => handleRespond(r.id, 'decline')} className="h-9 w-9 rounded-full bg-secondary grid place-items-center">
+                  <X className="h-4 w-4" strokeWidth={3} />
+                </motion.button>
               </div>
             ))}
           </div>
         </>
       )}
 
-      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Connections</h2>
+      <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 px-4">Connections</h2>
       {loading ? (
-        <div className="space-y-2">{[...Array(2)].map((_, i) => <div key={i} className="h-14 rounded-xl bg-card animate-pulse" />)}</div>
+        <div>{[...Array(3)].map((_, i) => <CrewRowSkeleton key={i} />)}</div>
       ) : connections.length === 0 ? (
-        <div className="text-center py-10 text-muted-foreground">
-          <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>No connections yet.</p>
-          <p className="text-xs mt-1">Find golfers by their exact username.</p>
+        <div className="text-center py-16 text-muted-foreground px-6">
+          <div className="h-16 w-16 rounded-full bg-secondary/60 grid place-items-center mx-auto mb-4">
+            <Users className="h-7 w-7 opacity-50" />
+          </div>
+          <p className="font-semibold text-foreground">No connections yet</p>
+          <p className="text-sm mt-1">Find golfers by their exact username above.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div>
           {connections.map((c) => (
-            <div key={c.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-3">
+            <motion.div key={c.id} whileTap={{ scale: 0.99 }} className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
               <Avatar><AvatarFallback className="bg-secondary">{c.name.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold truncate">{c.name}</div>
                 <div className="text-xs text-muted-foreground">@{c.username}</div>
               </div>
-              <Button size="sm" variant="secondary" onClick={() => handleBlock(c.id)} className="h-9"><Ban className="h-4 w-4" /></Button>
-            </div>
+              <motion.button whileTap={{ scale: 0.92 }} onClick={() => handleBlock(c.id)} className="h-9 w-9 rounded-full bg-secondary grid place-items-center">
+                <Ban className="h-4 w-4" />
+              </motion.button>
+            </motion.div>
           ))}
         </div>
       )}
 
-      <div className="mt-5 rounded-xl bg-secondary/50 border border-border p-3 flex gap-2">
+      <div className="m-4 rounded-2xl bg-secondary/40 border border-border p-3.5 flex gap-2.5">
         <Shield className="h-4 w-4 text-accent shrink-0 mt-0.5" />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground leading-relaxed">
           Crew is invite-only. Your rounds, location, and contact info stay private. Block or report anyone from their profile.
         </p>
       </div>

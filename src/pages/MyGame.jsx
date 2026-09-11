@@ -1,8 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Flag, TrendingUp, Award, Calendar } from 'lucide-react';
+import { motion } from 'framer-motion';
+import GlassHeader from '@/components/golf/GlassHeader';
+import { RoundRowSkeleton, StatCardSkeleton } from '@/components/golf/Shimmer';
 import { getRounds, addRound, getRoundStats } from '@/lib/golfData';
-import { Button } from '@/components/ui/button';
 import RoundForm from '@/components/golf/RoundForm';
+import { useToast } from '@/components/ui/use-toast';
 import { format, parseISO } from 'date-fns';
 
 export default function MyGame() {
@@ -10,6 +13,7 @@ export default function MyGame() {
   const [stats, setStats] = useState({ count: 0, avg: null, best: null });
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
+  const { toast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -24,47 +28,56 @@ export default function MyGame() {
   const handleSave = async (round) => {
     await addRound(round);
     await load();
+    toast({ title: 'Round logged', description: `${round.holes} holes · ${round.score} strokes` });
   };
 
   return (
-    <div className="safe-top px-4 pt-4">
-      <header className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold font-heading">My Game</h1>
-          <p className="text-sm text-muted-foreground">Your private round history</p>
+    <div>
+      <GlassHeader>
+        <div className="h-[60px] px-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-extrabold leading-none">My Game</h1>
+            <p className="text-xs text-muted-foreground mt-1">Your private round history</p>
+          </div>
         </div>
-        <Button onClick={() => setFormOpen(true)} className="h-11 rounded-xl">
-          <Plus className="h-5 w-5 mr-1" />Round
-        </Button>
-      </header>
+      </GlassHeader>
 
-      <div className="grid grid-cols-3 gap-2 mb-5">
-        <StatCard icon={Flag} label="Rounds" value={stats.count} />
-        <StatCard icon={TrendingUp} label="Avg" value={stats.avg ?? '—'} />
-        <StatCard icon={Award} label="Best" value={stats.best ?? '—'} />
+      <div className="px-4 pt-4">
+        <div className="grid grid-cols-3 gap-2.5 mb-5">
+          {loading ? (
+            [...Array(3)].map((_, i) => <StatCardSkeleton key={i} />)
+          ) : (
+            <>
+              <StatCard icon={Flag} label="Rounds" value={stats.count} />
+              <StatCard icon={TrendingUp} label="Avg" value={stats.avg ?? '—'} />
+              <StatCard icon={Award} label="Best" value={stats.best ?? '—'} />
+            </>
+          )}
+        </div>
+
+        <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 px-1">History</h2>
       </div>
 
-      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">History</h2>
       {loading ? (
-        <div className="space-y-2">
-          {[...Array(3)].map((_, i) => <div key={i} className="h-16 rounded-xl bg-card animate-pulse" />)}
-        </div>
+        <div>{[...Array(3)].map((_, i) => <RoundRowSkeleton key={i} />)}</div>
       ) : rounds.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Flag className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p>No rounds logged yet.</p>
-          <p className="text-xs mt-1">Tap "Round" to add your first.</p>
+        <div className="text-center py-16 text-muted-foreground px-6">
+          <div className="h-16 w-16 rounded-full bg-secondary/60 grid place-items-center mx-auto mb-4">
+            <Flag className="h-7 w-7 opacity-50" />
+          </div>
+          <p className="font-semibold text-foreground">No rounds logged yet</p>
+          <p className="text-sm mt-1">Tap the + button to add your first round.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div>
           {rounds.map((r) => (
-            <div key={r.id} className="rounded-xl bg-card border border-border p-3 flex items-center gap-3">
-              <div className="h-12 w-12 rounded-lg fairway-gradient grid place-items-center shrink-0">
+            <motion.div key={r.id} whileTap={{ scale: 0.99 }} className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
+              <div className="h-12 w-12 rounded-xl fairway-gradient grid place-items-center shrink-0">
                 <span className="text-sm font-bold text-primary-foreground">{r.holes}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold">
+                  <span className="font-bold text-[15px]">
                     {r.score} <span className="text-xs text-muted-foreground font-normal">strokes</span>
                   </span>
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -73,10 +86,22 @@ export default function MyGame() {
                 </div>
                 {r.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{r.notes}</p>}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
+
+      <div className="fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] inset-x-0 z-40 pointer-events-none">
+        <div className="max-w-md mx-auto px-4 flex justify-end">
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            onClick={() => setFormOpen(true)}
+            className="pointer-events-auto h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-xl shadow-primary/40 grid place-items-center"
+          >
+            <Plus className="h-6 w-6" strokeWidth={2.5} />
+          </motion.button>
+        </div>
+      </div>
 
       <RoundForm open={formOpen} onClose={() => setFormOpen(false)} onSave={handleSave} />
     </div>
@@ -85,9 +110,9 @@ export default function MyGame() {
 
 function StatCard({ icon: Icon, label, value }) {
   return (
-    <div className="rounded-xl bg-card border border-border p-3 text-center">
-      <Icon className="h-4 w-4 mx-auto text-accent mb-1" />
-      <div className="text-xl font-bold">{value}</div>
+    <div className="rounded-2xl bg-card border border-border p-3 text-center">
+      <Icon className="h-4 w-4 mx-auto text-accent mb-1.5" />
+      <div className="text-xl font-extrabold">{value}</div>
       <div className="text-[11px] text-muted-foreground">{label}</div>
     </div>
   );

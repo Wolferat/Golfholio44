@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { MapPin, Star, Heart, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
@@ -6,38 +7,42 @@ const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', charity: 'Tournam
 
 export default function ListingCard({ item, saved, onToggleSave, onOpen }) {
   return (
-    <div className="rounded-2xl bg-card border border-border overflow-hidden">
-      <button onClick={onOpen} className="block w-full text-left">
-        <div className="relative h-36 fairway-gradient">
-          <span className="absolute top-2.5 left-2.5 rounded-full bg-background/70 backdrop-blur px-2.5 py-1 text-[11px] font-semibold text-foreground">
+    <div className="border-b border-border">
+      <motion.div
+        whileTap={{ scale: 0.985 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        onClick={onOpen}
+        className="cursor-pointer"
+      >
+        <div className="relative aspect-[16/9] fairway-gradient overflow-hidden">
+          <span className="absolute top-3 left-3 rounded-full glass-card border border-border/50 px-3 py-1 text-[11px] font-semibold text-foreground">
             {TYPE_LABEL[item.type]}
           </span>
-        </div>
-      </button>
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2">
-          <button onClick={onOpen} className="text-left flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground leading-tight truncate">{item.name}</h3>
-            <div className="flex items-center gap-2.5 text-xs text-muted-foreground mt-1 flex-wrap">
-              <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{item.location}</span>
-              {item.distance != null && <span>{item.distance} mi</span>}
-              {item.rating != null && <span className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-accent" />{item.rating}</span>}
-            </div>
-            {item.date && (
-              <div className="flex items-center gap-1 text-xs text-accent mt-1">
-                <Calendar className="h-3.5 w-3.5" />{format(parseISO(item.date), 'EEE, MMM d')}
-              </div>
-            )}
-          </button>
-          <button
-            onClick={onToggleSave}
+          <motion.button
+            whileTap={{ scale: 0.82 }}
+            onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
             aria-label={saved ? 'Unsave' : 'Save'}
-            className="shrink-0 h-9 w-9 rounded-full grid place-items-center bg-secondary active:scale-95 transition"
+            className="absolute top-3 right-3 h-10 w-10 rounded-full glass-card border border-border/50 grid place-items-center"
           >
-            <Heart className={cn('h-5 w-5', saved ? 'fill-accent text-accent' : 'text-muted-foreground')} />
-          </button>
+            <motion.span animate={{ scale: saved ? [1, 1.3, 1] : 1 }} transition={{ duration: 0.3 }}>
+              <Heart className={cn('h-5 w-5', saved ? 'fill-primary text-primary' : 'text-foreground')} />
+            </motion.span>
+          </motion.button>
         </div>
-      </div>
+        <div className="p-4">
+          <h3 className="font-bold text-[15px] leading-tight">{item.name}</h3>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1.5 flex-wrap">
+            <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{item.location}</span>
+            {item.distance != null && <span>{item.distance} mi</span>}
+            {item.rating != null && <span className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-accent" />{item.rating}</span>}
+          </div>
+          {item.date && (
+            <div className="flex items-center gap-1.5 text-xs text-accent mt-2 font-medium">
+              <Calendar className="h-3.5 w-3.5" />{format(parseISO(item.date), 'EEE, MMM d')}
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 }
