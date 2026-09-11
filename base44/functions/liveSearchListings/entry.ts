@@ -2,9 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
 import { geocode, collectAreaCandidates, enrichAndCache } from '../../shared/googlePlaces.ts';
 
-const SHERMAN = { lat: 33.6357, lng: -96.6086 };
 const RADIUS_M = 48280; // 30 miles
-const CAP = 25;
 
 export default async function(req) {
   try {
@@ -13,17 +11,20 @@ export default async function(req) {
     if (!key) return Response.json({ error: 'GOOGLE_PLACES_API_KEY not set' }, { status: 500 });
 
     const body = await req.json().catch(() => ({}));
+    const lat = body.lat != null ? Number(body.lat) : null;
+    const lng = body.lng != null ? Number(body.lng) : null;
     const zip = (body.zip || '').trim();
-    let center = SHERMAN;
-    if (zip) {
-      const g = await geocode(key, zip);
-      if (!g) return Response.json({ error: 'Could not geocode: ' + zip }, { status: 500 });
-      center = g;
-    }
+    const near = (body.near || '').trim();
+
+    let center = null;
+    if (lat != null && lng != null) center = { lat, lng };
+    else if (zip) center = await geocode(key, zip);
+    else if (near) center = await geocode(key, near);
+    if (!center) return Response.json({ error: 'Provide lat/lng, zip, or near' }, { status: 400 });
 
     const { seen, counts } = await collectAreaCandidates(key, center.lat, center.lng, RADIUS_M);
-    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, CAP);
-    return Response.json({ region: zip || 'Sherman, TX', searches: counts, ...result });
+    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, null);
+    return Response.json({ searches: counts, ...result });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

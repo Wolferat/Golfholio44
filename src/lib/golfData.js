@@ -32,6 +32,11 @@ export async function toggleFavorite(id) {
   return res.data.saved;
 }
 
+export async function refreshNearby(loc) {
+  const res = await base44.functions.invoke('liveSearchListings', loc);
+  return res.data;
+}
+
 export async function getLiveTournaments() {
   const res = await base44.functions.invoke('getGolfListings', { category: 'charity' });
   const now = new Date();
