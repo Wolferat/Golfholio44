@@ -36,6 +36,11 @@ export default function TeeTimes() {
     await base44.entities.TeeTime.delete(id);
     await load();
   };
+  const complete = async (id) => {
+    await base44.entities.TeeTime.update(id, { status: 'completed' });
+    toast({ title: 'Marked as played' });
+    await load();
+  };
 
   const upcoming = times.filter((t) => t.status === 'scheduled');
   const sorted = [...upcoming].sort((a, b) => (a.date + a.time > b.date + b.time ? 1 : -1));
@@ -65,7 +70,7 @@ export default function TeeTimes() {
           </div>
         ) : (
           <div className="p-4 space-y-2.5">
-            {sorted.map((t) => <TeeTimeListItem key={t.id} teeTime={t} onCancel={() => cancel(t.id)} />)}
+            {sorted.map((t) => <TeeTimeListItem key={t.id} teeTime={t} onCancel={() => cancel(t.id)} onComplete={() => complete(t.id)} />)}
           </div>
         )}
       </PullToRefresh>
