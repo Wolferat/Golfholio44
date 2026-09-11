@@ -3,7 +3,7 @@ import { Heart, Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Image } from '@/components/ui/image';
 
-const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', charity: 'Tournament', training: 'Lesson' };
+const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', tournament: 'Tournament', lesson: 'Lesson' };
 
 export default function VenueCard({ item, saved, onToggleSave, onOpen, index = 0 }) {
   const photo = item.photo;

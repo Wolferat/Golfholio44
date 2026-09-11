@@ -51,6 +51,12 @@
         "type": "string"
       }
     },
+    "rating": {
+      "type": "number"
+    },
+    "place_id": {
+      "type": "string"
+    },
     "starts_at": {
       "type": "string",
       "format": "date-time"

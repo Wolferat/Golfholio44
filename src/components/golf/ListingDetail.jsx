@@ -1,10 +1,11 @@
 import { Heart, MapPin, Star, Calendar, Globe, Navigation, X, Phone, DollarSign } from 'lucide-react';
 import BottomSheet from './BottomSheet';
+import { Image } from '@/components/ui/image';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 
-const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', charity: 'Tournament', training: 'Lesson' };
+const TYPE_LABEL = { course: 'Course', simulator: 'Simulator', tournament: 'Tournament', lesson: 'Lesson' };
 
 export default function ListingDetail({ item, saved, onToggleSave, onClose }) {
   const directionsUrl = item
@@ -15,7 +16,13 @@ export default function ListingDetail({ item, saved, onToggleSave, onClose }) {
     <BottomSheet open={!!item} onClose={onClose} maxHeight="85dvh">
       {item && (
         <div>
-          <div className="relative h-[260px] fairway-gradient">
+          <div className="relative h-[260px] overflow-hidden">
+            {item.photo ? (
+              <Image src={item.photo} fittingType="fill" className="absolute inset-0 h-full w-full" />
+            ) : (
+              <div className="absolute inset-0 fairway-gradient" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
             <button onClick={onClose} className="absolute top-3 right-3 h-10 w-10 rounded-full glass-card border border-border/50 grid place-items-center">
               <X className="h-5 w-5" />
             </button>
