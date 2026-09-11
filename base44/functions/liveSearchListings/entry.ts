@@ -3,6 +3,7 @@ import { secrets } from 'base44:runtime';
 import { geocode, collectAreaCandidates, enrichAndCache } from '../../shared/googlePlaces.ts';
 
 const RADIUS_M = 48280; // 30 miles
+const CAP = 20; // max new venues per background refresh — keeps it fast, rest cached on future opens
 
 export default async function(req) {
   try {
@@ -23,7 +24,7 @@ export default async function(req) {
     if (!center) return Response.json({ error: 'Provide lat/lng, zip, or near' }, { status: 400 });
 
     const { seen, counts } = await collectAreaCandidates(key, center.lat, center.lng, RADIUS_M);
-    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, null);
+    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, CAP);
     return Response.json({ searches: counts, ...result });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
