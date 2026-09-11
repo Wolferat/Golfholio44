@@ -1,12 +1,12 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { Compass, Bookmark, Flag, Users, User } from 'lucide-react';
+import { Compass, Flag, CalendarClock, Users, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 const TABS = [
-  { to: '/', label: 'Explore', icon: Compass, end: true },
-  { to: '/saved', label: 'Saved', icon: Bookmark, end: false },
-  { to: '/my-game', label: 'My Game', icon: Flag, end: false },
+  { to: '/', label: 'Courses', icon: Compass, end: true },
+  { to: '/play', label: 'Play', icon: Flag, end: false },
+  { to: '/tee-times', label: 'Tee Times', icon: CalendarClock, end: false },
   { to: '/crew', label: 'Crew', icon: Users, end: false },
   { to: '/profile', label: 'Profile', icon: User, end: false },
 ];

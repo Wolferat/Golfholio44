@@ -1,0 +1,47 @@
+{
+  "name": "Scorecard",
+  "type": "object",
+  "properties": {
+    "course_name": {
+      "type": "string"
+    },
+    "course_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "holes": {
+      "type": "number",
+      "default": 18
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "completed"
+      ],
+      "default": "active"
+    },
+    "players": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pars": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "scores": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "course_name",
+    "date"
+  ]
+}

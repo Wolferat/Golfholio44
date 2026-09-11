@@ -13,8 +13,9 @@ import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import MobileShell from './components/MobileShell';
 import Explore from './pages/Explore';
-import Saved from './pages/Saved';
-import MyGame from './pages/MyGame';
+import Play from './pages/Play';
+import ScorecardLive from './pages/ScorecardLive';
+import TeeTimes from './pages/TeeTimes';
 import Crew from './pages/Crew';
 import Profile from '@/pages/Profile';
 import Admin from './pages/Admin';
@@ -52,8 +53,9 @@ const AuthenticatedApp = () => {
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<MobileShell />}>
           <Route path="/" element={<Explore />} />
-          <Route path="/saved" element={<Saved />} />
-          <Route path="/my-game" element={<MyGame />} />
+          <Route path="/play" element={<Play />} />
+          <Route path="/play/:id" element={<ScorecardLive />} />
+          <Route path="/tee-times" element={<TeeTimes />} />
           <Route path="/crew" element={<Crew />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<Admin />} />

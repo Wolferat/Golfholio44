@@ -1,0 +1,40 @@
+{
+  "name": "TeeTime",
+  "type": "object",
+  "properties": {
+    "course_name": {
+      "type": "string"
+    },
+    "course_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "time": {
+      "type": "string"
+    },
+    "group_size": {
+      "type": "number",
+      "default": 4
+    },
+    "notes": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "scheduled",
+        "completed",
+        "cancelled"
+      ],
+      "default": "scheduled"
+    }
+  },
+  "required": [
+    "course_name",
+    "date",
+    "time"
+  ]
+}
