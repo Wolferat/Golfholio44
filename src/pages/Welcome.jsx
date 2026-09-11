@@ -66,7 +66,7 @@ export default function Welcome() {
           className="mt-10 text-center"
         >
           <motion.h1 variants={rise} className="text-4xl font-extrabold tracking-tight font-heading">
-            Golfolio
+            Golfholio
           </motion.h1>
           <motion.p variants={rise} className="mt-3 text-base text-foreground/80 text-balance leading-relaxed">
             A private club for golfers who play. Invitation-only — built for the ones who show up at first light.

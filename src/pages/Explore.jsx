@@ -101,7 +101,7 @@ export default function Explore() {
     <div className="night-glow">
       <GlassHeader>
         <div className="h-[60px] px-4 flex items-center justify-between">
-          <span className="text-lg font-extrabold tracking-tight">Golfolio</span>
+          <span className="text-lg font-extrabold tracking-tight">Golfholio</span>
           {isAuthed ? (
             <div className="h-9 w-9 rounded-full bg-primary/15 border border-primary/40 grid place-items-center text-sm font-bold text-primary">
               {initials}

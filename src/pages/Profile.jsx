@@ -52,7 +52,7 @@ export default function Profile() {
         </motion.button>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground mt-6 pb-4">Golfolio · Howling Solutions</p>
+      <p className="text-center text-xs text-muted-foreground mt-6 pb-4">Golfholio · Howling Solutions</p>
 
       <BottomSheet open={confirmOpen} onClose={() => setConfirmOpen(false)} maxHeight="50dvh">
         <div className="p-5 pb-nav">
