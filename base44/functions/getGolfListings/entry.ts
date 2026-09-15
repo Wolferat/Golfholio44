@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
-import { haversineMi, geocode, isLikelyNonGolfName } from '../../shared/googlePlaces.ts';
+import { haversineMi, geocode, isPositivelyGolfRelated } from '../../shared/googlePlaces.ts';
 
 const SHERMAN = { lat: 33.6357, lng: -96.6086 };
 const RADIUS_MI = 15;
@@ -57,25 +57,25 @@ export default async function(req) {
       // Exclude expired events from public discovery
       if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now) continue;
 
-      // Safety net: hide records with non-golf names even if incorrectly approved
-      if (isLikelyNonGolfName(r.name)) continue;
+      // Fail closed: only positively golf-related records appear publicly.
+      // Ambiguous/non-golf names stay in the admin queue until explicitly approved.
+      if (!isPositivelyGolfRelated(r)) continue;
 
-      // Credible-source filter: hide approved records without a tier 1-4 verification source
-      const hasCredibleSource =
-        (r.verification_tier != null && r.verification_tier >= 1 && r.verification_tier <= 4) ||
-        !!r.source_url ||
-        !!r.official_website ||
-        !!r.website;
-      if (!hasCredibleSource) continue;
+      // Credible-source filter: require verified tier 1-4 AND a recorded source_url.
+      // No fallback to bare website/official_website without a verified tier.
+      const tier = r.verification_tier;
+      const hasCredibleTier = tier != null && tier >= 1 && tier <= 4;
+      const hasSourceUrl = !!r.source_url;
+      if (!hasCredibleTier || !hasSourceUrl) continue;
 
       // Enforce 15-mile radius server-side using coordinates
       if (r.latitude == null || r.longitude == null) continue;
       const distance = Math.round(haversineMi(centerLat, centerLng, r.latitude, r.longitude) * 10) / 10;
       if (distance > RADIUS_MI) continue;
 
-      // Unverified-photo filter: hide unverified cover photos, keep listing visible with neutral fallback
-      const hasVerifiedPhoto = r.photo_verified === true || !!r.photo_source_url;
-      const publicPhoto = hasVerifiedPhoto && Array.isArray(r.photos) && r.photos.length ? r.photos[0] : null;
+      // Photo filter: only verified photos (photo_verified === true) appear publicly.
+      // Unverified legacy photos are hidden from all player-facing views; listing stays visible with neutral fallback.
+      const publicPhoto = r.photo_verified === true && Array.isArray(r.photos) && r.photos.length ? r.photos[0] : null;
 
       const startsAt = r.starts_at || null;
       const endsAt = r.ends_at || null;

@@ -54,6 +54,9 @@ const GOLF_NAME_KEYWORDS = [
   'country club', 'links', 'fairway', 'tee box', 'simulator', 'golf center',
   'golf academy', 'golf training', 'golf practice', 'golf instruction',
   'golf club', 'golf course', 'golf ranch', 'golf resort',
+  'birdie', 'eagle golf', 'bogey golf', 'tee time', 'putter', 'wedge',
+  'caddy', 'caddie', 'indoor golf', 'golf lounge', 'golf performance',
+  'golf fitting', 'golf repair', 'golf shop',
 ];
 
 const NON_GOLF_NAME_PATTERNS = [
@@ -101,9 +104,18 @@ export function isLikelyNonGolfName(name) {
   return hasNonGolfKw && !hasGolfKw;
 }
 
-export function assignVerificationTier(det) {
-  if (det.website) return 3; // Google Business Profile with website
-  return 5; // Unverified
+// Fail-closed positive check: a record must contain a golf keyword to be considered golf-related.
+// Used by public discovery — ambiguous names without a clear golf signal are hidden until admin approval.
+export function isPositivelyGolfRelated(record) {
+  const name = (record.name || '').toLowerCase();
+  if (!name) return false;
+  return GOLF_NAME_KEYWORDS.some((kw) => name.includes(kw));
+}
+
+// Google Places discovery always starts at tier 5 (unverified).
+// An admin may later promote to tier 1-4 after verifying the official source.
+export function assignVerificationTier(_det) {
+  return 5;
 }
 
 function component(components, type) {
@@ -149,7 +161,7 @@ export function buildListingRecord(det, type, placeId, centerLat, centerLng) {
     rating: typeof det.rating === 'number' ? det.rating : null,
     place_id: placeId,
     status: 'pending',
-    source_url: det.website || '',
+    source_url: placeId ? `https://www.google.com/maps/place/?q=place_id:${placeId}` : '',
     source_type: 'google_places',
     verification_tier: verificationTier,
     verification_notes: 'Auto-discovered via Google Places — pending admin review',
@@ -268,5 +280,94 @@ export async function enrichAndCache(base44, key, seen, centerLat, centerLng, ca
     duplicates,
     totalArea: seen.size,
     alreadyCached: existingPlaceIds.size,
+  };
+}
+
+// ============================================================
+// DRY RUN — returns candidate details without storing anything
+// ============================================================
+
+export async function dryRunEnrich(key, seen, centerLat, centerLng, cap) {
+  const candidates = [];
+  for (const [placeId, info] of seen) {
+    candidates.push({ placeId, type: info.type });
+    if (cap != null && candidates.length >= cap) break;
+  }
+
+  const details = await Promise.all(candidates.map((c) => placeDetails(key, c.placeId).catch(() => null)));
+  const results = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const det = details[i];
+    const c = candidates[i];
+
+    if (!det) {
+      results.push({
+        place_id: c.placeId,
+        name: '(place details unavailable)',
+        proposed_type: c.type,
+        proposed_status: 'pending',
+        rejected: true,
+        rejection_reason: 'place details fetch failed',
+        source_type: 'google_places',
+        source_url: `https://www.google.com/maps/place/?q=place_id:${c.placeId}`,
+        verification_tier: 5,
+      });
+      continue;
+    }
+
+    const golfCheck = isGolfRelated(det);
+    if (!golfCheck.isGolf) {
+      results.push({
+        place_id: c.placeId,
+        name: det.name,
+        address: det.formatted_address || '',
+        phone: det.formatted_phone_number || '',
+        website: det.website || '',
+        rating: typeof det.rating === 'number' ? det.rating : null,
+        latitude: det.geometry?.location?.lat ?? null,
+        longitude: det.geometry?.location?.lng ?? null,
+        proposed_type: c.type,
+        proposed_status: 'pending',
+        rejected: true,
+        rejection_reason: golfCheck.reason,
+        source_type: 'google_places',
+        source_url: `https://www.google.com/maps/place/?q=place_id:${c.placeId}`,
+        verification_tier: 5,
+      });
+      continue;
+    }
+
+    const rec = buildListingRecord(det, c.type, c.placeId, centerLat, centerLng);
+    const distance = (rec.latitude != null && rec.longitude != null)
+      ? Math.round(haversineMi(centerLat, centerLng, rec.latitude, rec.longitude) * 10) / 10
+      : null;
+
+    results.push({
+      place_id: c.placeId,
+      name: det.name,
+      address: det.formatted_address || '',
+      phone: det.formatted_phone_number || '',
+      website: det.website || '',
+      rating: typeof det.rating === 'number' ? det.rating : null,
+      latitude: rec.latitude,
+      longitude: rec.longitude,
+      distance_mi: distance,
+      proposed_type: c.type,
+      proposed_status: 'pending',
+      rejected: false,
+      rejection_reason: null,
+      source_type: 'google_places',
+      source_url: rec.source_url,
+      verification_tier: rec.verification_tier,
+      verification_notes: rec.verification_notes,
+      photo_verified: false,
+      photos_would_store: 0,
+    });
+  }
+
+  return {
+    candidates: results,
+    totalArea: seen.size,
   };
 }

@@ -37,6 +37,12 @@ export async function refreshNearby(loc) {
   return res.data;
 }
 
+// Admin-only read-only discovery: returns candidate details without storing anything.
+export async function dryRunSearch(loc) {
+  const res = await base44.functions.invoke('liveSearchListings', { ...loc, dry_run: true });
+  return res.data;
+}
+
 export async function getLiveTournaments() {
   const res = await base44.functions.invoke('getGolfListings', { category: 'all' });
   const now = new Date();

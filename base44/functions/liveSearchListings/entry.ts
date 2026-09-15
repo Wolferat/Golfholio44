@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
-import { geocode, collectAreaCandidates, enrichAndCache } from '../../shared/googlePlaces.ts';
+import { geocode, collectAreaCandidates, enrichAndCache, dryRunEnrich } from '../../shared/googlePlaces.ts';
 
 const SHERMAN = { lat: 33.6357, lng: -96.6086 };
 const RADIUS_M = 24140; // 15 miles
@@ -23,6 +23,7 @@ export default async function(req) {
     const lng = body.lng != null ? Number(body.lng) : null;
     const zip = (body.zip || '').trim();
     const near = (body.near || '').trim();
+    const dryRun = body.dry_run === true;
 
     // Server-validated cap: 1-3 only for manual test searches
     let cap = body.cap != null ? Number(body.cap) : null;
@@ -39,8 +40,14 @@ export default async function(req) {
     if (!center) center = SHERMAN;
 
     const { seen, counts } = await collectAreaCandidates(key, center.lat, center.lng, RADIUS_M);
+
+    if (dryRun) {
+      const result = await dryRunEnrich(key, seen, center.lat, center.lng, cap);
+      return Response.json({ dry_run: true, searches: counts, ...result });
+    }
+
     const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, cap);
-    return Response.json({ searches: counts, ...result });
+    return Response.json({ dry_run: false, searches: counts, ...result });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
