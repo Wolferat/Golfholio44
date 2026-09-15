@@ -11,7 +11,7 @@ import LocationSheet from '@/components/golf/LocationSheet';
 import ListingDetail from '@/components/golf/ListingDetail';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
-import { getListings, searchListings, toggleFavorite, getSavedIds, getLiveTournaments, refreshNearby } from '@/lib/golfData';
+import { getListings, searchListings, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
 import { useGate } from '@/components/golf/GateProvider';
@@ -40,7 +40,6 @@ export default function Explore() {
   const [selected, setSelected] = useState(null);
   const [tournaments, setTournaments] = useState([]);
   const [golfers, setGolfers] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
   const refreshedFor = useRef('');
   const [consented, setConsented] = useState(() => {
     try { return localStorage.getItem(CONSENT_KEY) === '1'; } catch { return false; }
@@ -67,25 +66,6 @@ export default function Explore() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (isAuthed) getSavedIds().then(setSaved).catch(() => {}); }, [isAuthed]);
-
-  // Background live-search: once cached results are shown for a location, refresh from Google Places and merge.
-  useEffect(() => {
-    if (loading) return;
-    const locKey = loc.coords ? `${loc.coords.lat},${loc.coords.lng}` : loc.city;
-    if (!locKey || refreshedFor.current === locKey) return;
-    refreshedFor.current = locKey;
-    let cancelled = false;
-    (async () => {
-      setRefreshing(true);
-      try {
-        await refreshNearby(locParam);
-        const data = query ? await searchListings(query, category, locParam) : await getListings(category, locParam);
-        if (!cancelled) setItems(data);
-      } catch {}
-      if (!cancelled) setRefreshing(false);
-    })();
-    return () => { cancelled = true; };
-  }, [loading, loc.coords, loc.city]);
 
   const handleToggleSave = async (id) => {
     if (!isAuthed) { gate(); return; }
@@ -168,13 +148,8 @@ export default function Explore() {
         <section className="px-4 mt-6">
           <div className="flex items-end justify-between mb-1">
             <h2 className="text-xl font-extrabold tracking-tight">Near you now</h2>
-            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-              {refreshing ? (
-                <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                  Updating nearby…
-                </>
-              ) : (loc.coords ? 'Near you' : 'Within 15 miles')}
+            <span className="text-xs text-muted-foreground">
+              {loc.coords ? 'Near you' : 'Within 15 miles'}
             </span>
           </div>
           <motion.div initial={{ width: 0 }} animate={{ width: 56 }} transition={{ duration: 1, ease: 'easeOut' }} className="h-0.5 bg-primary rounded-full mb-3" />

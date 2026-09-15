@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX } from 'lucide-react';
+import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX, Table2 } from 'lucide-react';
 import { getPendingPhotos, reviewPhoto, getFlaggedListings, getPendingListings, reviewListingAction, getAuditReport } from '@/lib/golfData';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
+import AuditTable from '@/components/golf/AuditTable';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -21,7 +22,7 @@ export default function Admin() {
       if (tab === 'pending') {
         const p = await getPendingListings('pending');
         setPending(p);
-      } else if (tab === 'audit') {
+      } else if (tab === 'audit' || tab === 'auditTable') {
         const a = await getAuditReport();
         setAudit(a);
       } else if (tab === 'photos') {
@@ -58,6 +59,7 @@ export default function Admin() {
   const tabs = [
     { key: 'pending', label: 'Pending', count: pending.length },
     { key: 'audit', label: 'Audit', count: null },
+    { key: 'auditTable', label: 'Audit Table', count: null },
     { key: 'photos', label: 'Photos', count: photos.length },
     { key: 'listings', label: 'Flagged', count: flagged.length },
   ];
@@ -118,6 +120,8 @@ export default function Admin() {
         )
       ) : tab === 'audit' ? (
         <AuditReport audit={audit} />
+      ) : tab === 'auditTable' ? (
+        audit ? <AuditTable table={audit.table || []} summary={audit.summary} /> : <EmptyState icon={Table2} title="No audit data" subtitle="Loading audit table…" />
       ) : tab === 'photos' ? (
         photos.length === 0 ? (
           <EmptyState icon={ShieldCheck} title="All caught up" subtitle="No photos awaiting review." />

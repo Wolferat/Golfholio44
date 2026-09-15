@@ -82,6 +82,15 @@
       ],
       "default": "pending"
     },
+    "claim_status": {
+      "type": "string",
+      "enum": [
+        "unclaimed",
+        "pending_claim",
+        "claimed"
+      ],
+      "default": "unclaimed"
+    },
     "source_url": {
       "type": "string"
     },

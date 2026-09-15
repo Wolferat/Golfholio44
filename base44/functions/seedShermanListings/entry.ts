@@ -9,6 +9,13 @@ const CAP = 25;
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
+
+    // Admin-only: discovery writes must never run for ordinary users
+    const user = await base44.auth.me();
+    if (!user || user.role !== 'admin') {
+      return Response.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
     const key = secrets.get('GOOGLE_PLACES_API_KEY');
     if (!key) return Response.json({ error: 'GOOGLE_PLACES_API_KEY not set' }, { status: 500 });
 

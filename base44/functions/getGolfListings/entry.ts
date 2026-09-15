@@ -60,10 +60,22 @@ export default async function(req) {
       // Safety net: hide records with non-golf names even if incorrectly approved
       if (isLikelyNonGolfName(r.name)) continue;
 
+      // Credible-source filter: hide approved records without a tier 1-4 verification source
+      const hasCredibleSource =
+        (r.verification_tier != null && r.verification_tier >= 1 && r.verification_tier <= 4) ||
+        !!r.source_url ||
+        !!r.official_website ||
+        !!r.website;
+      if (!hasCredibleSource) continue;
+
       // Enforce 15-mile radius server-side using coordinates
       if (r.latitude == null || r.longitude == null) continue;
       const distance = Math.round(haversineMi(centerLat, centerLng, r.latitude, r.longitude) * 10) / 10;
       if (distance > RADIUS_MI) continue;
+
+      // Unverified-photo filter: hide unverified cover photos, keep listing visible with neutral fallback
+      const hasVerifiedPhoto = r.photo_verified === true || !!r.photo_source_url;
+      const publicPhoto = hasVerifiedPhoto && Array.isArray(r.photos) && r.photos.length ? r.photos[0] : null;
 
       const startsAt = r.starts_at || null;
       const endsAt = r.ends_at || null;
@@ -85,7 +97,7 @@ export default async function(req) {
         website: r.official_website || r.website,
         phone: r.phone,
         address: r.address,
-        photo: Array.isArray(r.photos) && r.photos.length ? r.photos[0] : null,
+        photo: publicPhoto,
         rating: r.rating ?? null,
         distance,
         coords: true,

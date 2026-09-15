@@ -25,6 +25,38 @@ function normalizeName(name) {
   return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function computeDistance(r) {
+  if (r.latitude == null || r.longitude == null) return null;
+  return Math.round(haversineMi(SHERMAN.lat, SHERMAN.lng, r.latitude, r.longitude) * 10) / 10;
+}
+
+function hasCredibleSource(r) {
+  return (r.verification_tier != null && r.verification_tier >= 1 && r.verification_tier <= 4)
+    || !!r.source_url || !!r.official_website || !!r.website;
+}
+
+function hasUnverifiedPhotos(r) {
+  return Array.isArray(r.photos) && r.photos.length > 0 && !r.photo_verified;
+}
+
+function isNonGolfName(name) {
+  const lower = (name || '').toLowerCase();
+  const hasGolfKw = GOLF_KEYWORDS.some((kw) => lower.includes(kw));
+  const hasNonGolfKw = NON_GOLF_PATTERNS.some((p) => lower.includes(p));
+  return hasNonGolfKw && !hasGolfKw;
+}
+
+function recommendAction(r, reasons) {
+  if (reasons.includes('non-golf name pattern')) return 'Reject';
+  if (reasons.includes('expired event')) return 'Expire/archive';
+  if (reasons.includes('invalid type')) return 'Flag for human review';
+  if (reasons.includes('duplicate')) return 'Duplicate review';
+  if (reasons.includes('out of radius')) return 'Keep hidden';
+  if (reasons.includes('no credible source')) return 'Re-verify';
+  if (reasons.includes('unverified photos')) return 'Suppress photo / re-verify photo';
+  return 'Keep approved';
+}
+
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -45,36 +77,43 @@ export default async function(req) {
       unverifiedPhotos: [],
       expiredEvents: [],
       legacyTypes: [],
+      claimedStatus: [],
     };
+
+    // Full per-record table
+    const table = [];
 
     const seenNames = new Map();
     const seenPlaceIds = new Map();
 
     for (const r of all) {
       const name = (r.name || '').toLowerCase();
+      const distance = computeDistance(r);
+      const reasons = [];
 
       // 1. Probable non-golf
       const hasGolfKw = GOLF_KEYWORDS.some((kw) => name.includes(kw));
       const hasNonGolfKw = NON_GOLF_PATTERNS.some((p) => name.includes(p));
       if (hasNonGolfKw && !hasGolfKw) {
+        reasons.push('non-golf name pattern');
         audit.nonGolf.push({ id: r.id, name: r.name, type: r.type, status: r.status, reason: 'non-golf name pattern' });
       }
 
       // 2. Out of radius
-      if (r.latitude != null && r.longitude != null) {
-        const dist = Math.round(haversineMi(SHERMAN.lat, SHERMAN.lng, r.latitude, r.longitude) * 10) / 10;
-        if (dist > RADIUS_MI) {
-          audit.outOfRadius.push({ id: r.id, name: r.name, type: r.type, distance: dist });
-        }
+      if (distance != null && distance > RADIUS_MI) {
+        reasons.push('out of radius');
+        audit.outOfRadius.push({ id: r.id, name: r.name, type: r.type, distance });
       }
 
       // 3. Category mismatch
       if (!VALID_TYPES.has(r.type)) {
+        reasons.push('invalid type');
         audit.categoryMismatches.push({ id: r.id, name: r.name, type: r.type, reason: 'invalid type' });
       }
 
       // 3b. Legacy type
       if (r.type === 'lesson') {
+        reasons.push('legacy type');
         audit.legacyTypes.push({ id: r.id, name: r.name, type: r.type, suggestedType: 'training' });
       }
 
@@ -90,22 +129,49 @@ export default async function(req) {
       }
 
       // 5. No credible source
-      if (!r.source_url && !r.verification_tier && !r.official_website && !r.website) {
+      if (!hasCredibleSource(r)) {
+        reasons.push('no credible source');
         audit.noCredibleSource.push({ id: r.id, name: r.name, type: r.type, status: r.status });
       }
 
       // 6. Unverified photos
-      if (Array.isArray(r.photos) && r.photos.length > 0 && !r.photo_verified) {
+      if (hasUnverifiedPhotos(r)) {
+        reasons.push('unverified photos');
         audit.unverifiedPhotos.push({ id: r.id, name: r.name, photoCount: r.photos.length });
       }
 
       // 7. Expired events still public
       if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now && r.status === 'approved') {
+        reasons.push('expired event');
         audit.expiredEvents.push({ id: r.id, name: r.name, type: r.type, endsAt: r.ends_at });
       }
+
+      // 8. Records using claimed as a status (should be migrated to claim_status)
+      if (r.status === 'claimed') {
+        reasons.push('status: claimed (should be approved + claim_status)');
+        audit.claimedStatus.push({ id: r.id, name: r.name, type: r.type, status: r.status, claimed_by: r.claimed_by });
+      }
+
+      // Build full per-record row
+      table.push({
+        id: r.id,
+        name: r.name,
+        type: r.type,
+        city: r.city || '',
+        distance,
+        status: r.status,
+        claim_status: r.claim_status || 'unclaimed',
+        source_url: r.source_url || r.official_website || r.website || '',
+        verification_tier: r.verification_tier ?? null,
+        photo_count: Array.isArray(r.photos) ? r.photos.length : 0,
+        photo_verified: r.photo_verified || false,
+        audit_reasons: reasons,
+        recommended_action: recommendAction(r, reasons),
+      });
     }
 
-    // Process duplicate groups
+    // Process duplicate groups — mark records in duplicate groups
+    const duplicateIds = new Set();
     for (const [norm, records] of seenNames) {
       if (records.length > 1) {
         audit.duplicates.push({
@@ -113,6 +179,7 @@ export default async function(req) {
           reason: 'same normalized name',
           records: records.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status, city: r.city })),
         });
+        records.forEach((r) => duplicateIds.add(r.id));
       }
     }
     for (const [placeId, records] of seenPlaceIds) {
@@ -122,6 +189,14 @@ export default async function(req) {
           reason: 'same place_id',
           records: records.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status })),
         });
+        records.forEach((r) => duplicateIds.add(r.id));
+      }
+    }
+    // Add duplicate reason to affected table rows
+    for (const row of table) {
+      if (duplicateIds.has(row.id) && !row.audit_reasons.includes('duplicate')) {
+        row.audit_reasons.push('duplicate');
+        row.recommended_action = recommendAction(row, row.audit_reasons);
       }
     }
 
@@ -135,9 +210,10 @@ export default async function(req) {
       unverifiedPhotos: audit.unverifiedPhotos.length,
       expiredEvents: audit.expiredEvents.length,
       legacyTypes: audit.legacyTypes.length,
+      claimedStatus: audit.claimedStatus.length,
     };
 
-    return Response.json({ summary, audit });
+    return Response.json({ summary, audit, table });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }
