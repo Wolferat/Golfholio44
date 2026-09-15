@@ -68,6 +68,7 @@ const NON_GOLF_NAME_PATTERNS = [
   'apartment', 'real estate', 'realtor', 'property management',
   'auto', 'car wash', 'tire', 'automotive',
   'storage', 'warehouse',
+  'county', 'clerk', 'city hall', 'municipal', 'post office', 'library', 'police', 'fire dept', 'fire department', 'sheriff',
 ];
 
 export function isGolfRelated(place) {
@@ -91,6 +92,13 @@ export function isGolfRelated(place) {
     return { isGolf: false, reason: 'mixed golf/non-golf signals' };
   }
   return { isGolf: false, reason: 'no golf signal' };
+}
+
+export function isLikelyNonGolfName(name) {
+  const lower = (name || '').toLowerCase();
+  const hasGolfKw = GOLF_NAME_KEYWORDS.some((kw) => lower.includes(kw));
+  const hasNonGolfKw = NON_GOLF_NAME_PATTERNS.some((p) => lower.includes(p));
+  return hasNonGolfKw && !hasGolfKw;
 }
 
 export function assignVerificationTier(det) {

@@ -14,6 +14,7 @@ const NON_GOLF_PATTERNS = [
   'hotel', 'motel', 'gas station', 'grocery', 'supermarket', 'walmart', 'target',
   'home depot', 'lowes', 'apartment', 'real estate', 'realtor',
   'auto', 'car wash', 'tire', 'storage', 'warehouse',
+  'county', 'clerk', 'city hall', 'municipal', 'post office', 'library', 'police', 'fire dept', 'fire department', 'sheriff',
 ];
 
 const GOLF_KEYWORDS = ['golf', 'driving range', 'putt', 'mini golf', 'country club', 'links', 'fairway', 'simulator'];

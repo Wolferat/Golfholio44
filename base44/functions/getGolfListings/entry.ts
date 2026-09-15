@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
-import { haversineMi, geocode } from '../../shared/googlePlaces.ts';
+import { haversineMi, geocode, isLikelyNonGolfName } from '../../shared/googlePlaces.ts';
 
 const SHERMAN = { lat: 33.6357, lng: -96.6086 };
 const RADIUS_MI = 15;
@@ -56,6 +56,9 @@ export default async function(req) {
     for (const r of records) {
       // Exclude expired events from public discovery
       if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now) continue;
+
+      // Safety net: hide records with non-golf names even if incorrectly approved
+      if (isLikelyNonGolfName(r.name)) continue;
 
       // Enforce 15-mile radius server-side using coordinates
       if (r.latitude == null || r.longitude == null) continue;
