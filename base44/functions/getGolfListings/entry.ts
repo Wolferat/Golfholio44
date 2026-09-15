@@ -1,21 +1,11 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
+import { secrets } from 'base44:runtime';
+import { haversineMi, geocode } from '../../shared/googlePlaces.ts';
 
-// Maps frontend category keys to Listing entity type values
-const CATEGORY_TO_TYPE = {
-  course: 'course',
-  simulator: 'simulator',
-  charity: 'tournament',
-  training: 'lesson',
-};
+const SHERMAN = { lat: 33.6357, lng: -96.6086 };
+const RADIUS_MI = 15;
 
-function haversineMi(lat1, lon1, lat2, lon2) {
-  const toRad = (d) => (d * Math.PI) / 180;
-  const R = 3958.8;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
 
 export default async function(req) {
   try {
@@ -26,12 +16,30 @@ export default async function(req) {
     const query = (body.query || '').trim();
     const lat = body.lat != null ? Number(body.lat) : null;
     const lng = body.lng != null ? Number(body.lng) : null;
-    const near = (body.near || '').trim().toLowerCase();
+    const near = (body.near || '').trim();
 
+    // Determine search center — default Sherman, TX
+    let centerLat = SHERMAN.lat;
+    let centerLng = SHERMAN.lng;
+
+    if (lat != null && lng != null) {
+      centerLat = lat;
+      centerLng = lng;
+    } else if (near) {
+      const key = secrets.get('GOOGLE_PLACES_API_KEY');
+      if (key) {
+        const g = await geocode(key, near);
+        if (g) { centerLat = g.lat; centerLng = g.lng; }
+      }
+    }
+
+    // Public queries: approved listings only
     let records = await base44.asServiceRole.entities.Listing.filter({ status: 'approved' });
 
-    const type = CATEGORY_TO_TYPE[category];
-    if (type) records = records.filter((r) => r.type === type);
+    // 1:1 category mapping — category keys match entity type values
+    if (category && category !== 'all') {
+      records = records.filter((r) => r.type === category);
+    }
 
     if (query) {
       const q = query.toLowerCase();
@@ -43,15 +51,22 @@ export default async function(req) {
     }
 
     const now = new Date();
-    const items = records.map((r) => {
+    const items = [];
+
+    for (const r of records) {
+      // Exclude expired events from public discovery
+      if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now) continue;
+
+      // Enforce 15-mile radius server-side using coordinates
+      if (r.latitude == null || r.longitude == null) continue;
+      const distance = Math.round(haversineMi(centerLat, centerLng, r.latitude, r.longitude) * 10) / 10;
+      if (distance > RADIUS_MI) continue;
+
       const startsAt = r.starts_at || null;
       const endsAt = r.ends_at || null;
-      const live = r.type === 'tournament' && startsAt && new Date(startsAt) <= now && (!endsAt || new Date(endsAt) >= now);
-      let distance = null;
-      if (lat != null && lng != null && r.latitude != null && r.longitude != null) {
-        distance = Math.round(haversineMi(lat, lng, r.latitude, r.longitude) * 10) / 10;
-      }
-      return {
+      const isLive = EVENT_TYPES.has(r.type) && startsAt && new Date(startsAt) <= now && (!endsAt || new Date(endsAt) >= now);
+
+      items.push({
         id: r.id,
         type: r.type,
         name: r.name,
@@ -59,29 +74,25 @@ export default async function(req) {
         city: r.city,
         venue: r.venue_name,
         date: r.starts_at ? String(r.starts_at).slice(0, 10) : null,
-        startsAt: r.starts_at || null,
-        endsAt: r.ends_at || null,
-        live,
+        startsAt,
+        endsAt,
+        live: isLive,
         price: r.price_note,
         blurb: r.description,
-        website: r.website,
+        website: r.official_website || r.website,
         phone: r.phone,
         address: r.address,
         photo: Array.isArray(r.photos) && r.photos.length ? r.photos[0] : null,
         rating: r.rating ?? null,
         distance,
-        coords: r.latitude != null && r.longitude != null,
-      };
-    });
+        coords: true,
+        is_professional_tournament: r.is_professional_tournament || false,
+        official_registration_url: r.official_registration_url || null,
+      });
+    }
 
-    const nearMatch = (it) => near && it.city && it.city.toLowerCase().includes(near);
     items.sort((a, b) => {
       if (a.distance != null && b.distance != null) return a.distance - b.distance;
-      if (a.distance != null) return -1;
-      if (b.distance != null) return 1;
-      const am = nearMatch(a) ? 0 : 1;
-      const bm = nearMatch(b) ? 0 : 1;
-      if (am !== bm) return am - bm;
       return 0;
     });
 

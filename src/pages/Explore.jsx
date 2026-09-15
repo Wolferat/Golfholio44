@@ -22,8 +22,8 @@ const CATEGORIES = [
   { key: 'all', label: 'All' },
   { key: 'course', label: 'Courses' },
   { key: 'simulator', label: 'Simulators' },
-  { key: 'charity', label: 'Tournaments' },
-  { key: 'training', label: 'Lessons' },
+  { key: 'training', label: 'Training' },
+  { key: 'tournament', label: 'Tournaments' },
 ];
 
 const CONSENT_KEY = 'golfolio_contacts_consent';
@@ -174,7 +174,7 @@ export default function Explore() {
                   <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                   Updating nearby…
                 </>
-              ) : (loc.coords ? 'Near you' : 'Within 30 miles')}
+              ) : (loc.coords ? 'Near you' : 'Within 15 miles')}
             </span>
           </div>
           <motion.div initial={{ width: 0 }} animate={{ width: 56 }} transition={{ duration: 1, ease: 'easeOut' }} className="h-0.5 bg-primary rounded-full mb-3" />

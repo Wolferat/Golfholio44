@@ -1,0 +1,143 @@
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
+import { haversineMi } from '../../shared/googlePlaces.ts';
+
+const SHERMAN = { lat: 33.6357, lng: -96.6086 };
+const RADIUS_MI = 15;
+const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
+
+const NON_GOLF_PATTERNS = [
+  'church', 'cathedral', 'ministry', 'temple', 'mosque', 'synagogue',
+  'school', 'isd', 'elementary', 'middle school', 'high school', 'university', 'college',
+  'hospital', 'medical', 'clinic', 'dental', 'pharmacy',
+  'cemetery', 'funeral', 'mortuary',
+  'restaurant', 'cafe', 'coffee', 'pizza', 'taco', 'bbq',
+  'hotel', 'motel', 'gas station', 'grocery', 'supermarket', 'walmart', 'target',
+  'home depot', 'lowes', 'apartment', 'real estate', 'realtor',
+  'auto', 'car wash', 'tire', 'storage', 'warehouse',
+];
+
+const GOLF_KEYWORDS = ['golf', 'driving range', 'putt', 'mini golf', 'country club', 'links', 'fairway', 'simulator'];
+
+const VALID_TYPES = new Set(['course', 'simulator', 'training', 'tournament', 'charity_event', 'corporate_event', 'league', 'golf_related_venue']);
+
+function normalizeName(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+export default async function(req) {
+  try {
+    const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me();
+    if (!user || user.role !== 'admin') {
+      return Response.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    const all = await base44.asServiceRole.entities.Listing.filter({});
+    const now = new Date();
+
+    const audit = {
+      nonGolf: [],
+      outOfRadius: [],
+      categoryMismatches: [],
+      duplicates: [],
+      noCredibleSource: [],
+      unverifiedPhotos: [],
+      expiredEvents: [],
+      legacyTypes: [],
+    };
+
+    const seenNames = new Map();
+    const seenPlaceIds = new Map();
+
+    for (const r of all) {
+      const name = (r.name || '').toLowerCase();
+
+      // 1. Probable non-golf
+      const hasGolfKw = GOLF_KEYWORDS.some((kw) => name.includes(kw));
+      const hasNonGolfKw = NON_GOLF_PATTERNS.some((p) => name.includes(p));
+      if (hasNonGolfKw && !hasGolfKw) {
+        audit.nonGolf.push({ id: r.id, name: r.name, type: r.type, status: r.status, reason: 'non-golf name pattern' });
+      }
+
+      // 2. Out of radius
+      if (r.latitude != null && r.longitude != null) {
+        const dist = Math.round(haversineMi(SHERMAN.lat, SHERMAN.lng, r.latitude, r.longitude) * 10) / 10;
+        if (dist > RADIUS_MI) {
+          audit.outOfRadius.push({ id: r.id, name: r.name, type: r.type, distance: dist });
+        }
+      }
+
+      // 3. Category mismatch
+      if (!VALID_TYPES.has(r.type)) {
+        audit.categoryMismatches.push({ id: r.id, name: r.name, type: r.type, reason: 'invalid type' });
+      }
+
+      // 3b. Legacy type
+      if (r.type === 'lesson') {
+        audit.legacyTypes.push({ id: r.id, name: r.name, type: r.type, suggestedType: 'training' });
+      }
+
+      // 4. Duplicates — track by name and place_id
+      const norm = normalizeName(r.name);
+      if (norm) {
+        if (!seenNames.has(norm)) seenNames.set(norm, []);
+        seenNames.get(norm).push(r);
+      }
+      if (r.place_id) {
+        if (!seenPlaceIds.has(r.place_id)) seenPlaceIds.set(r.place_id, []);
+        seenPlaceIds.get(r.place_id).push(r);
+      }
+
+      // 5. No credible source
+      if (!r.source_url && !r.verification_tier && !r.official_website && !r.website) {
+        audit.noCredibleSource.push({ id: r.id, name: r.name, type: r.type, status: r.status });
+      }
+
+      // 6. Unverified photos
+      if (Array.isArray(r.photos) && r.photos.length > 0 && !r.photo_verified) {
+        audit.unverifiedPhotos.push({ id: r.id, name: r.name, photoCount: r.photos.length });
+      }
+
+      // 7. Expired events still public
+      if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now && r.status === 'approved') {
+        audit.expiredEvents.push({ id: r.id, name: r.name, type: r.type, endsAt: r.ends_at });
+      }
+    }
+
+    // Process duplicate groups
+    for (const [norm, records] of seenNames) {
+      if (records.length > 1) {
+        audit.duplicates.push({
+          key: norm,
+          reason: 'same normalized name',
+          records: records.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status, city: r.city })),
+        });
+      }
+    }
+    for (const [placeId, records] of seenPlaceIds) {
+      if (records.length > 1) {
+        audit.duplicates.push({
+          key: placeId,
+          reason: 'same place_id',
+          records: records.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status })),
+        });
+      }
+    }
+
+    const summary = {
+      total: all.length,
+      nonGolf: audit.nonGolf.length,
+      outOfRadius: audit.outOfRadius.length,
+      categoryMismatches: audit.categoryMismatches.length,
+      duplicates: audit.duplicates.length,
+      noCredibleSource: audit.noCredibleSource.length,
+      unverifiedPhotos: audit.unverifiedPhotos.length,
+      expiredEvents: audit.expiredEvents.length,
+      legacyTypes: audit.legacyTypes.length,
+    };
+
+    return Response.json({ summary, audit });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}

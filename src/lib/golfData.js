@@ -38,10 +38,11 @@ export async function refreshNearby(loc) {
 }
 
 export async function getLiveTournaments() {
-  const res = await base44.functions.invoke('getGolfListings', { category: 'charity' });
+  const res = await base44.functions.invoke('getGolfListings', { category: 'all' });
   const now = new Date();
+  const eventTypes = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
   return (res.data.items || [])
-    .filter((t) => t.startsAt)
+    .filter((t) => t.startsAt && eventTypes.has(t.type))
     .map((t) => ({
       ...t,
       live: t.live || (new Date(t.startsAt) <= now && (!t.endsAt || new Date(t.endsAt) >= now)),
@@ -50,13 +51,32 @@ export async function getLiveTournaments() {
 }
 
 export async function getTournament(id) {
-  const res = await base44.functions.invoke('getGolfListings', { category: 'charity' });
-  return (res.data.items || []).find((t) => t.id === id) || null;
+  const res = await base44.functions.invoke('getGolfListings', { category: 'all' });
+  const eventTypes = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
+  return (res.data.items || []).find((t) => t.id === id && eventTypes.has(t.type)) || null;
 }
 
 export async function matchContacts(phones) {
   const res = await base44.functions.invoke('matchContacts', { phones });
   return res.data.matches || [];
+}
+
+// ============================================================
+// Admin — listing review & audit (real backend functions)
+// ============================================================
+export async function getPendingListings(status = 'pending') {
+  const res = await base44.functions.invoke('getAdminListings', { status });
+  return res.data.items || [];
+}
+
+export async function reviewListingAction(listingId, action, notes) {
+  const res = await base44.functions.invoke('reviewListing', { listingId, action, notes });
+  return res.data;
+}
+
+export async function getAuditReport() {
+  const res = await base44.functions.invoke('auditListings', {});
+  return res.data;
 }
 
 // ============================================================

@@ -10,8 +10,12 @@
       "enum": [
         "course",
         "simulator",
+        "training",
         "tournament",
-        "lesson"
+        "charity_event",
+        "corporate_event",
+        "league",
+        "golf_related_venue"
       ],
       "default": "course"
     },
@@ -70,9 +74,65 @@
       "enum": [
         "approved",
         "pending",
-        "rejected"
+        "flagged",
+        "rejected",
+        "expired",
+        "archived",
+        "claimed"
       ],
-      "default": "approved"
+      "default": "pending"
+    },
+    "source_url": {
+      "type": "string"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "google_places",
+        "official_website",
+        "event_website",
+        "google_business_profile",
+        "trusted_organization",
+        "community_report",
+        "admin"
+      ],
+      "default": "google_places"
+    },
+    "verification_tier": {
+      "type": "number"
+    },
+    "verification_notes": {
+      "type": "string"
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verified_by": {
+      "type": "string"
+    },
+    "official_website": {
+      "type": "string"
+    },
+    "official_registration_url": {
+      "type": "string"
+    },
+    "is_professional_tournament": {
+      "type": "boolean",
+      "default": false
+    },
+    "claimed_by": {
+      "type": "string"
+    },
+    "photo_source": {
+      "type": "string"
+    },
+    "photo_verified": {
+      "type": "boolean",
+      "default": false
+    },
+    "photo_source_url": {
+      "type": "string"
     }
   },
   "required": [

@@ -2,8 +2,9 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
 import { geocode, collectAreaCandidates, enrichAndCache } from '../../shared/googlePlaces.ts';
 
-const RADIUS_M = 48280; // 30 miles
-const CAP = 20; // max new venues per background refresh — keeps it fast, rest cached on future opens
+const SHERMAN = { lat: 33.6357, lng: -96.6086 };
+const RADIUS_M = 24140; // 15 miles
+const CAP = 20;
 
 export default async function(req) {
   try {
@@ -17,11 +18,12 @@ export default async function(req) {
     const zip = (body.zip || '').trim();
     const near = (body.near || '').trim();
 
-    let center = null;
+    let center = SHERMAN;
     if (lat != null && lng != null) center = { lat, lng };
     else if (zip) center = await geocode(key, zip);
     else if (near) center = await geocode(key, near);
-    if (!center) return Response.json({ error: 'Provide lat/lng, zip, or near' }, { status: 400 });
+
+    if (!center) center = SHERMAN;
 
     const { seen, counts } = await collectAreaCandidates(key, center.lat, center.lng, RADIUS_M);
     const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, CAP);

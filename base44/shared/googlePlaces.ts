@@ -1,4 +1,5 @@
 // Shared Google Places helpers for seed + live-search backend functions.
+// Phase 1: Safe intake — no auto-approval, golf-only filtering, no photo re-hosting.
 
 export function haversineMi(lat1, lon1, lat2, lon2) {
   const toRad = (d) => (d * Math.PI) / 180;
@@ -9,7 +10,6 @@ export function haversineMi(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Geocode any address string (zip, city, place) to { lat, lng } via Google Geocoding API.
 export async function geocode(key, address) {
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${key}`;
   const res = await fetch(url);
@@ -28,39 +28,74 @@ export async function nearbySearch(key, lat, lng, radiusM, type, keyword) {
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
     throw new Error(data.error_message || data.status);
   }
-  let results = data.results || [];
-  let nextToken = data.next_page_token;
-  while (nextToken) {
-    await new Promise((r) => setTimeout(r, 2500));
-    const pr = new URLSearchParams({ pagetoken: nextToken, key });
-    const pres = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${pr}`);
-    const pdata = await pres.json();
-    results = results.concat(pdata.results || []);
-    nextToken = pdata.next_page_token;
-  }
-  return results;
+  // Phase 1: cap at 20 results per search to control API cost
+  return (data.results || []).slice(0, 20);
 }
 
 export async function placeDetails(key, placeId) {
   const params = new URLSearchParams({
     place_id: placeId,
     key,
-    fields: 'name,formatted_address,formatted_phone_number,website,rating,photos,geometry,address_components',
+    fields: 'name,formatted_address,formatted_phone_number,website,rating,photos,geometry,address_components,types',
   });
   const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params}`);
   const data = await res.json();
   return data.result || null;
 }
 
-export async function uploadPhoto(base44, key, photoRef) {
-  const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${encodeURIComponent(photoRef)}&key=${key}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const blob = await res.blob();
-  if (!blob || blob.size === 0) return null;
-  const file = new File([blob], `venue-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
-  const out = await base44.asServiceRole.integrations.Core.UploadPublicFile({ file });
-  return out.file_url || null;
+// ============================================================
+// GOLF-SPECIFIC FILTERING — reject non-golf before storage
+// ============================================================
+
+const GOLF_PLACE_TYPES = new Set(['golf_course']);
+
+const GOLF_NAME_KEYWORDS = [
+  'golf', 'driving range', 'putt', 'mini golf', 'pitch & putt', 'pitch and putt',
+  'country club', 'links', 'fairway', 'tee box', 'simulator', 'golf center',
+  'golf academy', 'golf training', 'golf practice', 'golf instruction',
+  'golf club', 'golf course', 'golf ranch', 'golf resort',
+];
+
+const NON_GOLF_NAME_PATTERNS = [
+  'church', 'cathedral', 'ministry', 'temple', 'mosque', 'synagogue',
+  'school', 'isd', 'elementary', 'middle school', 'high school', 'university', 'college',
+  'hospital', 'medical', 'clinic', 'urgent care', 'dental', 'pharmacy',
+  'cemetery', 'memorial park', 'funeral', 'mortuary',
+  'restaurant', 'cafe', 'coffee', 'bar and grill', 'bbq', 'pizza', 'taco',
+  'hotel', 'motel', 'inn ', 'resort and spa',
+  'gas station', 'convenience store', 'grocery', 'supermarket', 'walmart', 'target',
+  'home depot', 'lowes', 'hardware',
+  'apartment', 'real estate', 'realtor', 'property management',
+  'auto', 'car wash', 'tire', 'automotive',
+  'storage', 'warehouse',
+];
+
+export function isGolfRelated(place) {
+  const name = (place.name || '').toLowerCase();
+  const types = place.types || [];
+
+  const hasGolfType = types.some((t) => GOLF_PLACE_TYPES.has(t));
+  const hasGolfKeyword = GOLF_NAME_KEYWORDS.some((kw) => name.includes(kw));
+  const hasNonGolfPattern = NON_GOLF_NAME_PATTERNS.some((p) => name.includes(p));
+
+  if (hasGolfType && !hasNonGolfPattern) {
+    return { isGolf: true, reason: 'golf_course place type' };
+  }
+  if (hasGolfKeyword && !hasNonGolfPattern) {
+    return { isGolf: true, reason: 'golf keyword in name' };
+  }
+  if (hasGolfType && hasNonGolfPattern) {
+    return { isGolf: false, reason: 'golf type but non-golf name' };
+  }
+  if (hasGolfKeyword && hasNonGolfPattern) {
+    return { isGolf: false, reason: 'mixed golf/non-golf signals' };
+  }
+  return { isGolf: false, reason: 'no golf signal' };
+}
+
+export function assignVerificationTier(det) {
+  if (det.website) return 3; // Google Business Profile with website
+  return 5; // Unverified
 }
 
 function component(components, type) {
@@ -68,15 +103,27 @@ function component(components, type) {
   return c ? c.long_name || c.short_name : null;
 }
 
+function normalizeName(name) {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getDomain(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return u.hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 export function buildListingRecord(det, type, placeId, centerLat, centerLng) {
   const city = component(det.address_components, 'locality') || component(det.address_components, 'postal_town') || '';
   const state = component(det.address_components, 'administrative_area_level_1') || '';
   const lat = det.geometry?.location?.lat ?? null;
   const lng = det.geometry?.location?.lng ?? null;
-  let distance = null;
-  if (lat != null && lng != null && centerLat != null) {
-    distance = Math.round(haversineMi(centerLat, centerLng, lat, lng) * 10) / 10;
-  }
+  const verificationTier = assignVerificationTier(det);
+
   return {
     name: det.name,
     type,
@@ -88,28 +135,85 @@ export function buildListingRecord(det, type, placeId, centerLat, centerLng) {
     longitude: lng,
     phone: det.formatted_phone_number || '',
     website: det.website || '',
-    description: `${type === 'course' ? 'Golf course' : 'Golf simulator / range'}${distance != null ? ' — ' + distance + ' mi away.' : ''}`,
+    official_website: det.website || '',
+    description: '',
     photos: [],
     rating: typeof det.rating === 'number' ? det.rating : null,
     place_id: placeId,
-    status: 'approved',
+    status: 'pending',
+    source_url: det.website || '',
+    source_type: 'google_places',
+    verification_tier: verificationTier,
+    verification_notes: 'Auto-discovered via Google Places — pending admin review',
+    verified_at: null,
+    verified_by: null,
+    official_registration_url: '',
+    is_professional_tournament: false,
+    photo_source: null,
+    photo_verified: false,
+    photo_source_url: null,
   };
 }
 
-// Run the 3 searches (courses, simulators, ranges) and return deduped candidates keyed by place_id.
-export async function collectAreaCandidates(key, lat, lng, radiusM) {
-  const seen = new Map();
-  const courseRes = await nearbySearch(key, lat, lng, radiusM, 'golf_course', null);
-  for (const r of courseRes) if (!seen.has(r.place_id)) seen.set(r.place_id, { type: 'course' });
-  const simRes = await nearbySearch(key, lat, lng, radiusM, null, 'golf simulator');
-  for (const r of simRes) if (!seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator' });
-  const rangeRes = await nearbySearch(key, lat, lng, radiusM, null, 'driving range');
-  for (const r of rangeRes) if (!seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator' });
-  return { seen, counts: { courses: courseRes.length, simulators: simRes.length, ranges: rangeRes.length } };
+export function isDuplicate(candidate, existingRecords) {
+  const candName = normalizeName(candidate.name);
+  const candDomain = getDomain(candidate.website || candidate.official_website);
+  const candAddr = (candidate.address || '').toLowerCase().trim();
+
+  for (const existing of existingRecords) {
+    if (candidate.place_id && existing.place_id === candidate.place_id) {
+      return { isDup: true, reason: 'same place_id' };
+    }
+    if (candDomain) {
+      const existDomain = getDomain(existing.website || existing.official_website);
+      if (existDomain && existDomain === candDomain) {
+        return { isDup: true, reason: 'same website domain' };
+      }
+    }
+    if (candName && candName === normalizeName(existing.name) && (candidate.city || '') === (existing.city || '')) {
+      return { isDup: true, reason: 'same name + city' };
+    }
+    if (candAddr && candAddr === (existing.address || '').toLowerCase().trim()) {
+      return { isDup: true, reason: 'same address' };
+    }
+    if (candidate.latitude != null && candidate.longitude != null && existing.latitude != null && existing.longitude != null) {
+      const dist = haversineMi(candidate.latitude, candidate.longitude, existing.latitude, existing.longitude);
+      if (dist < 0.1 && candName === normalizeName(existing.name)) {
+        return { isDup: true, reason: 'same location + name' };
+      }
+    }
+  }
+  return { isDup: false };
 }
 
-// Enrich candidates via Place Details, upload first photo, bulkCreate new venues (skip existing place_ids).
-// cap: optional max new records (null = no cap). Returns { created, photoErrors, totalArea, alreadyCached }.
+export async function collectAreaCandidates(key, lat, lng, radiusM) {
+  const seen = new Map();
+  let counts = { courses: 0, simulators: 0, ranges: 0 };
+
+  const courseRes = await nearbySearch(key, lat, lng, radiusM, 'golf_course', null);
+  for (const r of courseRes) {
+    const check = isGolfRelated(r);
+    if (check.isGolf && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'course' });
+  }
+  counts.courses = courseRes.length;
+
+  const simRes = await nearbySearch(key, lat, lng, radiusM, null, 'golf simulator');
+  for (const r of simRes) {
+    const check = isGolfRelated(r);
+    if (check.isGolf && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator' });
+  }
+  counts.simulators = simRes.length;
+
+  const rangeRes = await nearbySearch(key, lat, lng, radiusM, null, 'driving range');
+  for (const r of rangeRes) {
+    const check = isGolfRelated(r);
+    if (check.isGolf && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator' });
+  }
+  counts.ranges = rangeRes.length;
+
+  return { seen, counts };
+}
+
 export async function enrichAndCache(base44, key, seen, centerLat, centerLng, cap) {
   const existing = await base44.asServiceRole.entities.Listing.filter({});
   const existingPlaceIds = new Set((existing || []).map((l) => l.place_id).filter(Boolean));
@@ -123,18 +227,23 @@ export async function enrichAndCache(base44, key, seen, centerLat, centerLng, ca
 
   const details = await Promise.all(candidates.map((c) => placeDetails(key, c.placeId).catch(() => null)));
   const records = [];
-  let photoErrors = 0;
+  let rejected = 0;
+  let duplicates = 0;
+  let skipped = 0;
+
   for (let i = 0; i < candidates.length; i++) {
     const det = details[i];
-    if (!det) continue;
+    if (!det) { skipped++; continue; }
     const c = candidates[i];
-    let photoUrl = null;
-    try {
-      const ref = det.photos && det.photos[0] && det.photos[0].photo_reference;
-      if (ref) photoUrl = await uploadPhoto(base44, key, ref);
-    } catch { photoErrors++; }
+
+    const golfCheck = isGolfRelated(det);
+    if (!golfCheck.isGolf) { rejected++; continue; }
+
     const rec = buildListingRecord(det, c.type, c.placeId, centerLat, centerLng);
-    if (photoUrl) rec.photos = [photoUrl];
+
+    const dupCheck = isDuplicate(rec, existing);
+    if (dupCheck.isDup) { duplicates++; continue; }
+
     records.push(rec);
   }
 
@@ -143,5 +252,13 @@ export async function enrichAndCache(base44, key, seen, centerLat, centerLng, ca
     const res = await base44.asServiceRole.entities.Listing.bulkCreate(records);
     created = Array.isArray(res) ? res.length : (res?.length || records.length);
   }
-  return { created, photoErrors, totalArea: seen.size, alreadyCached: existingPlaceIds.size };
+
+  return {
+    created,
+    skipped,
+    rejected,
+    duplicates,
+    totalArea: seen.size,
+    alreadyCached: existingPlaceIds.size,
+  };
 }

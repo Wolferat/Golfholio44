@@ -45,7 +45,7 @@ export function useGolfLocation() {
   }, []);
 
   const label = coords ? 'Current location' : city;
-  const subtitle = coords ? 'Near you' : 'Within 30 miles';
+  const subtitle = coords ? 'Near you' : 'Within 15 miles';
 
   return { city, coords, locating, sheetOpen, setSheetOpen, useGps, saveCity, label, subtitle };
 }

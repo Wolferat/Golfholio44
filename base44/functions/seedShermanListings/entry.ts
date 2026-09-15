@@ -3,7 +3,7 @@ import { secrets } from 'base44:runtime';
 import { geocode, collectAreaCandidates, enrichAndCache } from '../../shared/googlePlaces.ts';
 
 const SHERMAN = { lat: 33.6357, lng: -96.6086 };
-const RADIUS_M = 48280; // 30 miles
+const RADIUS_M = 24140; // 15 miles
 const CAP = 25;
 
 export default async function(req) {
