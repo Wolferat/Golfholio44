@@ -31,8 +31,8 @@ function computeDistance(r) {
 }
 
 // A plain website is NOT a credible verified source.
-// Credible source = verification_tier 1-4 AND a recorded source_url.
-function hasCredibleSource(r) {
+// Verified source = verification_tier 1-4 AND a recorded source_url.
+function hasVerifiedSource(r) {
   const tier = r.verification_tier;
   return tier != null && tier >= 1 && tier <= 4 && !!r.source_url;
 }
@@ -52,15 +52,15 @@ function isNonGolfName(name) {
   return hasNonGolfKw && !hasGolfKw;
 }
 
-function recommendAction(r, reasons) {
+function recommendAction(reasons) {
   if (reasons.includes('non-golf name pattern')) return 'Reject';
   if (reasons.includes('expired event')) return 'Expire/archive';
   if (reasons.includes('invalid type')) return 'Flag for human review';
   if (reasons.includes('duplicate')) return 'Duplicate review';
   if (reasons.includes('out of radius')) return 'Keep hidden';
-  if (reasons.includes('missing verification metadata')) return 'Promote to tier 1-4 + add source_url';
   if (reasons.includes('no source candidate')) return 'Find source or reject';
   if (reasons.includes('website unverified')) return 'Verify website → promote tier';
+  if (reasons.includes('missing verification metadata')) return 'Promote to tier 1-4 + add source_url';
   if (reasons.includes('unverified photos')) return 'Suppress photo / re-verify photo';
   return 'Keep approved';
 }
@@ -73,8 +73,38 @@ export default async function(req) {
       return Response.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    const all = await base44.asServiceRole.entities.Listing.filter({});
+    const raw = await base44.asServiceRole.entities.Listing.filter({});
+
+    // Deduplicate by Listing ID — the table must have exactly one row per unique ID.
+    const seenIds = new Set();
+    const records = [];
+    for (const r of raw) {
+      if (!r.id || seenIds.has(r.id)) continue;
+      seenIds.add(r.id);
+      records.push(r);
+    }
+    const totalUniqueListings = records.length;
     const now = new Date();
+
+    // Every category tracks distinct IDs via Sets so counts can never exceed totalUniqueListings.
+    const ids = {
+      nonGolf: new Set(),
+      outOfRadius: new Set(),
+      categoryMismatches: new Set(),
+      duplicates: new Set(),
+      missingVerificationMetadata: new Set(),
+      unverifiedPhotos: new Set(),
+      expiredEvents: new Set(),
+      legacyTypes: new Set(),
+      claimedStatus: new Set(),
+    };
+
+    // Mutually exclusive source-verification breakdown — must sum to totalUniqueListings.
+    const sourceVerification = {
+      verifiedSource: new Set(),        // tier 1-4 + source_url
+      candidateUnverified: new Set(),   // has website/official_website/source_url but not verified
+      noSourceCandidate: new Set(),     // no website, official_website, or source_url at all
+    };
 
     const audit = {
       nonGolf: [],
@@ -90,40 +120,51 @@ export default async function(req) {
       claimedStatus: [],
     };
 
-    // Full per-record table
     const table = [];
-
     const seenNames = new Map();
     const seenPlaceIds = new Map();
 
-    for (const r of all) {
+    for (const r of records) {
       const name = (r.name || '').toLowerCase();
       const distance = computeDistance(r);
       const reasons = [];
+
+      // Mutually exclusive source-verification bucket
+      if (hasVerifiedSource(r)) {
+        sourceVerification.verifiedSource.add(r.id);
+      } else if (hasAnySourceCandidate(r)) {
+        sourceVerification.candidateUnverified.add(r.id);
+      } else {
+        sourceVerification.noSourceCandidate.add(r.id);
+      }
 
       // 1. Probable non-golf
       const hasGolfKw = GOLF_KEYWORDS.some((kw) => name.includes(kw));
       const hasNonGolfKw = NON_GOLF_PATTERNS.some((p) => name.includes(p));
       if (hasNonGolfKw && !hasGolfKw) {
         reasons.push('non-golf name pattern');
+        ids.nonGolf.add(r.id);
         audit.nonGolf.push({ id: r.id, name: r.name, type: r.type, status: r.status, reason: 'non-golf name pattern' });
       }
 
       // 2. Out of radius
       if (distance != null && distance > RADIUS_MI) {
         reasons.push('out of radius');
+        ids.outOfRadius.add(r.id);
         audit.outOfRadius.push({ id: r.id, name: r.name, type: r.type, distance });
       }
 
       // 3. Category mismatch
       if (!VALID_TYPES.has(r.type)) {
         reasons.push('invalid type');
+        ids.categoryMismatches.add(r.id);
         audit.categoryMismatches.push({ id: r.id, name: r.name, type: r.type, reason: 'invalid type' });
       }
 
       // 3b. Legacy type
       if (r.type === 'lesson') {
         reasons.push('legacy type');
+        ids.legacyTypes.add(r.id);
         audit.legacyTypes.push({ id: r.id, name: r.name, type: r.type, suggestedType: 'training' });
       }
 
@@ -138,12 +179,13 @@ export default async function(req) {
         seenPlaceIds.get(r.place_id).push(r);
       }
 
-      // 5a. Missing required public verification metadata (no tier 1-4 and/or no source_url)
+      // 5. Missing required public verification metadata (no tier 1-4 and/or no source_url)
       const tier = r.verification_tier;
       const hasCredibleTier = tier != null && tier >= 1 && tier <= 4;
       const hasSourceUrl = !!r.source_url;
       if (!hasCredibleTier || !hasSourceUrl) {
         reasons.push('missing verification metadata');
+        ids.missingVerificationMetadata.add(r.id);
         audit.missingVerificationMetadata.push({
           id: r.id, name: r.name, type: r.type, status: r.status,
           verification_tier: tier ?? null,
@@ -151,7 +193,7 @@ export default async function(req) {
         });
       }
 
-      // 5b. No website or source candidate at all
+      // 5b. No website or source candidate at all (distinct from "missing metadata")
       if (!hasAnySourceCandidate(r)) {
         reasons.push('no source candidate');
         audit.noSourceCandidate.push({ id: r.id, name: r.name, type: r.type, status: r.status });
@@ -166,22 +208,25 @@ export default async function(req) {
       // 6. Unverified photos
       if (hasUnverifiedPhotos(r)) {
         reasons.push('unverified photos');
+        ids.unverifiedPhotos.add(r.id);
         audit.unverifiedPhotos.push({ id: r.id, name: r.name, photoCount: r.photos.length });
       }
 
       // 7. Expired events still public
       if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now && r.status === 'approved') {
         reasons.push('expired event');
+        ids.expiredEvents.add(r.id);
         audit.expiredEvents.push({ id: r.id, name: r.name, type: r.type, endsAt: r.ends_at });
       }
 
       // 8. Records using claimed as a status (should be migrated to claim_status)
       if (r.status === 'claimed') {
         reasons.push('status: claimed (should be approved + claim_status)');
+        ids.claimedStatus.add(r.id);
         audit.claimedStatus.push({ id: r.id, name: r.name, type: r.type, status: r.status, claimed_by: r.claimed_by });
       }
 
-      // Build full per-record row
+      // Build per-record row (one per unique ID)
       table.push({
         id: r.id,
         name: r.name,
@@ -197,53 +242,63 @@ export default async function(req) {
         photo_count: Array.isArray(r.photos) ? r.photos.length : 0,
         photo_verified: r.photo_verified || false,
         audit_reasons: reasons,
-        recommended_action: recommendAction(r, reasons),
+        recommended_action: recommendAction(reasons),
       });
     }
 
     // Process duplicate groups — mark records in duplicate groups
-    const duplicateIds = new Set();
-    for (const [norm, records] of seenNames) {
-      if (records.length > 1) {
+    for (const [norm, dups] of seenNames) {
+      if (dups.length > 1) {
         audit.duplicates.push({
           key: norm,
           reason: 'same normalized name',
-          records: records.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status, city: r.city })),
+          records: dups.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status, city: r.city })),
         });
-        records.forEach((r) => duplicateIds.add(r.id));
+        dups.forEach((r) => ids.duplicates.add(r.id));
       }
     }
-    for (const [placeId, records] of seenPlaceIds) {
-      if (records.length > 1) {
+    for (const [placeId, dups] of seenPlaceIds) {
+      if (dups.length > 1) {
         audit.duplicates.push({
           key: placeId,
           reason: 'same place_id',
-          records: records.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status })),
+          records: dups.map((r) => ({ id: r.id, name: r.name, type: r.type, status: r.status })),
         });
-        records.forEach((r) => duplicateIds.add(r.id));
+        dups.forEach((r) => ids.duplicates.add(r.id));
       }
     }
     // Add duplicate reason to affected table rows
     for (const row of table) {
-      if (duplicateIds.has(row.id) && !row.audit_reasons.includes('duplicate')) {
+      if (ids.duplicates.has(row.id) && !row.audit_reasons.includes('duplicate')) {
         row.audit_reasons.push('duplicate');
-        row.recommended_action = recommendAction(row, row.audit_reasons);
+        row.recommended_action = recommendAction(row.audit_reasons);
       }
     }
 
+    const sv = sourceVerification;
+    const svTotal = sv.verifiedSource.size + sv.candidateUnverified.size + sv.noSourceCandidate.size;
+
     const summary = {
-      total: all.length,
-      nonGolf: audit.nonGolf.length,
-      outOfRadius: audit.outOfRadius.length,
-      categoryMismatches: audit.categoryMismatches.length,
-      duplicates: audit.duplicates.length,
-      missingVerificationMetadata: audit.missingVerificationMetadata.length,
-      noSourceCandidate: audit.noSourceCandidate.length,
-      websiteUnverified: audit.websiteUnverified.length,
-      unverifiedPhotos: audit.unverifiedPhotos.length,
-      expiredEvents: audit.expiredEvents.length,
-      legacyTypes: audit.legacyTypes.length,
-      claimedStatus: audit.claimedStatus.length,
+      totalUniqueListings,
+      sourceVerification: {
+        verifiedSource: sv.verifiedSource.size,
+        candidateUnverified: sv.candidateUnverified.size,
+        noSourceCandidate: sv.noSourceCandidate.size,
+        sum: svTotal,
+        sumsToTotal: svTotal === totalUniqueListings,
+      },
+      nonGolf: ids.nonGolf.size,
+      outOfRadius: ids.outOfRadius.size,
+      categoryMismatches: ids.categoryMismatches.size,
+      duplicates: ids.duplicates.size,
+      missingVerificationMetadata: ids.missingVerificationMetadata.size,
+      noSourceCandidate: sv.noSourceCandidate.size,
+      websiteUnverified: sv.candidateUnverified.size,
+      unverifiedPhotos: ids.unverifiedPhotos.size,
+      expiredEvents: ids.expiredEvents.size,
+      legacyTypes: ids.legacyTypes.size,
+      claimedStatus: ids.claimedStatus.size,
+      overlapNote: 'Categories (nonGolf, outOfRadius, duplicates, missingVerificationMetadata, unverifiedPhotos, expiredEvents, etc.) are NOT mutually exclusive — a single listing can appear in multiple categories. Only sourceVerification {verifiedSource, candidateUnverified, noSourceCandidate} is mutually exclusive and sums to totalUniqueListings. All counts are distinct Listing IDs.',
     };
 
     return Response.json({ summary, audit, table });

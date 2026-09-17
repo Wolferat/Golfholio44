@@ -174,19 +174,36 @@ export default function Admin() {
 function AuditReport({ audit }) {
   if (!audit) return <EmptyState icon={FileSearch} title="No audit data" subtitle="Run the audit to see results." />;
   const { summary, audit: details } = audit;
+  const sv = summary.sourceVerification || {};
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
-        <StatCard label="Total listings" value={summary.total} />
-        <StatCard label="Non-golf" value={summary.nonGolf} icon={AlertTriangle} danger />
-        <StatCard label="Out of radius" value={summary.outOfRadius} icon={MapPin} />
-        <StatCard label="Bad categories" value={summary.categoryMismatches} icon={AlertTriangle} />
-        <StatCard label="Duplicates" value={summary.duplicates} icon={Copy} />
-        <StatCard label="Missing verification" value={summary.missingVerificationMetadata} icon={BadgeCheck} danger />
-        <StatCard label="No source candidate" value={summary.noSourceCandidate} icon={Link2Off} />
-        <StatCard label="Website unverified" value={summary.websiteUnverified} icon={Globe} />
-        <StatCard label="Unverified photos" value={summary.unverifiedPhotos} icon={ImageUp} />
-        <StatCard label="Expired events" value={summary.expiredEvents} icon={CalendarX} />
+      <div className="rounded-xl bg-card border border-border p-3">
+        <div className="text-xs text-muted-foreground mb-1">Total unique listings</div>
+        <div className="text-2xl font-bold">{summary.totalUniqueListings}</div>
+      </div>
+
+      <div>
+        <div className="text-sm font-semibold mb-2">Source verification (mutually exclusive)</div>
+        <div className="grid grid-cols-3 gap-2">
+          <StatCard label="Verified source" value={sv.verifiedSource} icon={BadgeCheck} />
+          <StatCard label="Candidate unverified" value={sv.candidateUnverified} icon={Globe} danger />
+          <StatCard label="No source" value={sv.noSourceCandidate} icon={Link2Off} />
+        </div>
+        <div className="text-xs text-muted-foreground mt-1.5">
+          Sum: {sv.sum} {sv.sumsToTotal ? '✓ equals total' : '✗ does NOT equal total'}
+        </div>
+      </div>
+
+      <div>
+        <div className="text-sm font-semibold mb-2">Distinct-ID counts (not mutually exclusive)</div>
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard label="Non-golf" value={summary.nonGolf} icon={AlertTriangle} danger />
+          <StatCard label="Out of radius" value={summary.outOfRadius} icon={MapPin} />
+          <StatCard label="Duplicates" value={summary.duplicates} icon={Copy} />
+          <StatCard label="Missing verification" value={summary.missingVerificationMetadata} icon={BadgeCheck} danger />
+          <StatCard label="Unverified photos" value={summary.unverifiedPhotos} icon={ImageUp} />
+          <StatCard label="Expired events" value={summary.expiredEvents} icon={CalendarX} />
+        </div>
       </div>
       {summary.legacyTypes > 0 && (
         <div className="rounded-xl bg-card border border-border p-3">
