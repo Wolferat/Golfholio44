@@ -1,20 +1,24 @@
 {
-  "generatedAt": "2026-09-17T23:35:00Z",
+  "generatedAt": "2026-09-17T23:55:00Z",
   "reference": "ZIP 75169 (Wills Point, TX) 32.7143, -96.0069",
   "method": "Read-only scan of stored fields only. Name-based golf signal (golf|country club|driving range, excluding disc/disk golf). Description field ignored (contaminated proximity text). No Google Places, no AI discovery, no new sources. Official URLs of approval candidates were fetched only to verify name/location/golf purpose.",
+  "reconciliation": {
+    "totalRecords": 324,
+    "buckets": { "verified": 6, "approval": 99, "hold": 40, "cleanup": 179 },
+    "sum": 324,
+    "reconciled": true,
+    "doubleCountResolved": "Julie Wells Golf (6aa485ac26c858720b49caa0) was counted in both the approval total (103) and the hold queue (37). Corrected: approval 102 -> after admin hold overrides (Back Nine, Stone River, Blackland) approval 99; hold 37 -> 40."
+  },
   "summary": {
     "totalRecords": 324,
     "alreadyGolfVerified": 6,
-    "approvalCandidatesRemaining": 94,
-    "approvalCandidatesInThisBatch": 9,
-    "holdTotal": 37,
+    "approvalCandidatesRemaining": 93,
+    "approvalCandidatesInThisBatch": 6,
+    "holdTotal": 40,
     "cleanupTotal": 179
   },
   "approvalCandidateIds": [
     "6aa485ac26c858720b49ca80",
-    "6aa485ac26c858720b49ca7e",
-    "6aa485ac26c858720b49ca81",
-    "6aa485ac26c858720b49ca8d",
     "6aa485ac26c858720b49ca98",
     "6aa485ac26c858720b49ca8c",
     "6aa485ac26c858720b49ca91",
@@ -39,32 +43,18 @@
       "6aa485ac26c858720b49ca9c"
     ],
     "duplicate_same_place_id": [
-      "6aaa40a33c370ef3b91d5093",
-      "6aab4ff002564041ffbe412c",
-      "6aaa40a33c370ef3b91d5087",
-      "6aaa40a33c370ef3b91d5089",
-      "6aaa40a33c370ef3b91d508a",
-      "6aab4ff002564041ffbe412a",
-      "6aab4ff002564041ffbe4130",
-      "6aab4ff002564041ffbe4132",
-      "6aaa40a33c370ef3b91d5083",
-      "6aab4ff002564041ffbe412f",
-      "6aaa40a33c370ef3b91d5094",
-      "6aaa40a33c370ef3b91d5086",
-      "6aab4ff002564041ffbe4135",
-      "6aab4ff002564041ffbe412e",
-      "6aab4ff002564041ffbe4134",
-      "6aab4ff002564041ffbe4138",
-      "6aaa40a33c370ef3b91d5088",
-      "6aaa40a33c370ef3b91d5092",
-      "6aac755e09292b7d2b624ece",
-      "6aaa40a33c370ef3b91d508e",
-      "6aaa40a33c370ef3b91d5095",
-      "6aab4ff002564041ffbe412d",
-      "6aab4ff002564041ffbe4137",
-      "6aab4ff002564041ffbe4139",
-      "6aab4ff002564041ffbe4131"
+      "6aaa40a33c370ef3b91d5093", "6aab4ff002564041ffbe412c", "6aaa40a33c370ef3b91d5087", "6aaa40a33c370ef3b91d5089", "6aaa40a33c370ef3b91d508a", "6aab4ff002564041ffbe412a", "6aab4ff002564041ffbe4130", "6aab4ff002564041ffbe4132", "6aaa40a33c370ef3b91d5083", "6aab4ff002564041ffbe412f", "6aaa40a33c370ef3b91d5094", "6aaa40a33c370ef3b91d5086", "6aab4ff002564041ffbe4135", "6aab4ff002564041ffbe412e", "6aab4ff002564041ffbe4134", "6aab4ff002564041ffbe4138", "6aaa40a33c370ef3b91d5088", "6aaa40a33c370ef3b91d5092", "6aac755e09292b7d2b624ece", "6aaa40a33c370ef3b91d508e", "6aaa40a33c370ef3b91d5095", "6aab4ff002564041ffbe412d", "6aab4ff002564041ffbe4137", "6aab4ff002564041ffbe4139", "6aab4ff002564041ffbe4131"
+    ],
+    "admin_hold_pending_evidence": [
+      "6aa485ac26c858720b49ca7e",
+      "6aa485ac26c858720b49ca8d",
+      "6aa485ac26c858720b49ca81"
     ]
+  },
+  "adminHoldNotes": {
+    "6aa485ac26c858720b49ca7e": "Back Nine Golf | North Forney, TX — official site says Coming Soon (not yet open)",
+    "6aa485ac26c858720b49ca8d": "Stone River Golf Club — official source evidence insufficient (JS-rendered page, minimal extractable content)",
+    "6aa485ac26c858720b49ca81": "Blackland Indoor Golf Club — require exact official-page title/address/simulator proof before re-presenting"
   },
   "cleanupByReason": {
     "other_non_golf": [
@@ -110,5 +100,5 @@
       "6aa485ac26c858720b49ca9d"
     ]
   },
-  "note": "Read-only. No listing records were modified. This file is a preserved queue snapshot for later admin action."
+  "note": "Read-only. No listing records were modified. This file is a preserved queue snapshot for later admin action. Counts are mutually exclusive and sum exactly to 324."
 }
