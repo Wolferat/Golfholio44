@@ -25,7 +25,7 @@ export default function NightHero({ locationLabel, subtitle, onOpenLocation, onU
           transition={{ delay: 0.18 }}
           className="text-[34px] font-extrabold mt-3 leading-none tracking-tight"
         >
-          {locationLabel}
+          {locationLabel || 'Find golf nearby'}
         </motion.h1>
         <motion.div
           initial={{ opacity: 0 }}
@@ -34,7 +34,7 @@ export default function NightHero({ locationLabel, subtitle, onOpenLocation, onU
           className="flex items-center justify-between mt-2.5"
         >
           <button onClick={onOpenLocation} className="text-sm text-muted-foreground flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 text-primary" /> {subtitle}
+            <MapPin className="h-3.5 w-3.5 text-primary" /> {subtitle || 'Choose location'}
           </button>
           <button
             onClick={onUseLocation}

@@ -2,7 +2,6 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
 import { haversineMi, geocode, isPositivelyGolfRelated } from '../../shared/googlePlaces.ts';
 
-const SHERMAN = { lat: 33.6357, lng: -96.6086 };
 const RADIUS_MI = 15;
 
 const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
@@ -18,9 +17,11 @@ export default async function(req) {
     const lng = body.lng != null ? Number(body.lng) : null;
     const near = (body.near || '').trim();
 
-    // Determine search center — default Sherman, TX
-    let centerLat = SHERMAN.lat;
-    let centerLng = SHERMAN.lng;
+    // Player location is REQUIRED. There is no silent default to any fixed city.
+    // The center must come from the player's device GPS (lat/lng) or a ZIP/place
+    // they explicitly entered (near). Geocoding of `near` happens server-side.
+    let centerLat = null;
+    let centerLng = null;
 
     if (lat != null && lng != null) {
       centerLat = lat;
@@ -31,6 +32,11 @@ export default async function(req) {
         const g = await geocode(key, near);
         if (g) { centerLat = g.lat; centerLng = g.lng; }
       }
+    }
+
+    // No location selected → no results. Never fall back to a hardcoded city.
+    if (centerLat == null || centerLng == null) {
+      return Response.json({ items: [] });
     }
 
     // Public queries: approved listings only

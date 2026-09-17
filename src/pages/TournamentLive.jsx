@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Calendar, Trophy } from 'lucide-react';
 import GlassHeader from '@/components/golf/GlassHeader';
 import { getTournament } from '@/lib/golfData';
+import { useGolfLocation } from '@/hooks/useGolfLocation';
 import { base44 } from '@/api/base44Client';
 import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -27,13 +28,17 @@ export default function TournamentLive() {
   const [tournament, setTournament] = useState(null);
   const [leaders, setLeaders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const loc = useGolfLocation();
+  const locParam = loc.coords
+    ? { lat: loc.coords.lat, lng: loc.coords.lng }
+    : (loc.city ? { near: loc.city } : null);
 
   useEffect(() => {
     let unsub = null;
     let active = true;
     (async () => {
       try {
-        const t = await getTournament(id);
+        const t = await getTournament(id, locParam || {});
         if (active) setTournament(t);
       } catch {}
       try {
@@ -79,7 +84,12 @@ export default function TournamentLive() {
             </div>
           </motion.div>
         ) : (
-          <div className="text-center py-16 text-muted-foreground"><p className="text-sm">Tournament not found.</p></div>
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="text-sm">{locParam ? 'Tournament unavailable in your area.' : 'Choose a location to view tournament details.'}</p>
+            {locParam && (
+              <button onClick={() => navigate('/')} className="text-xs mt-2 text-primary font-semibold">Back to Explore</button>
+            )}
+          </div>
         )}
 
         <div className="flex items-end justify-between mt-6 mb-1">

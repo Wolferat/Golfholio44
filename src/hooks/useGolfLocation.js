@@ -1,18 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
-const DEFAULT_CITY = 'Sherman, TX';
 const CITY_KEY = 'golfolio_home_city';
+const COORDS_KEY = 'golfolio_home_coords';
 
 export function useGolfLocation() {
   const [city, setCity] = useState(() => {
-    try { return localStorage.getItem(CITY_KEY) || DEFAULT_CITY; } catch { return DEFAULT_CITY; }
+    try { return localStorage.getItem(CITY_KEY) || null; } catch { return null; }
   });
-  const [coords, setCoords] = useState(null);
+  const [coords, setCoords] = useState(() => {
+    try { const raw = localStorage.getItem(COORDS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  });
   const [locating, setLocating] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Pull a saved home_city from the user profile only if nothing is stored locally.
+  // Never defaults to a fixed city — the player must choose.
   useEffect(() => {
+    if (city || coords) return;
     base44.auth.me().then((u) => {
       if (u && u.home_city) {
         setCity(u.home_city);
@@ -21,12 +26,18 @@ export function useGolfLocation() {
     }).catch(() => {});
   }, []);
 
+  const hasLocation = !!(coords || city);
+
   const useGps = useCallback(() => {
     if (!navigator.geolocation) return;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setCoords(c);
+        setCity(null);
+        try { localStorage.setItem(COORDS_KEY, JSON.stringify(c)); localStorage.removeItem(CITY_KEY); } catch {}
+        try { base44.auth.updateMe({ home_city: null }); } catch {}
         setLocating(false);
         setSheetOpen(false);
       },
@@ -36,16 +47,23 @@ export function useGolfLocation() {
   }, []);
 
   const saveCity = useCallback(async (newCity) => {
-    const c = newCity || DEFAULT_CITY;
+    const c = (newCity || '').trim();
+    if (!c) return;
     setCity(c);
     setCoords(null);
-    try { localStorage.setItem(CITY_KEY, c); } catch {}
+    try { localStorage.setItem(CITY_KEY, c); localStorage.removeItem(COORDS_KEY); } catch {}
     try { await base44.auth.updateMe({ home_city: c }); } catch {}
     setSheetOpen(false);
   }, []);
 
-  const label = coords ? 'Current location' : city;
-  const subtitle = coords ? 'Near you' : 'Within 15 miles';
+  const clearLocation = useCallback(() => {
+    setCity(null);
+    setCoords(null);
+    try { localStorage.removeItem(CITY_KEY); localStorage.removeItem(COORDS_KEY); } catch {}
+  }, []);
 
-  return { city, coords, locating, sheetOpen, setSheetOpen, useGps, saveCity, label, subtitle };
+  const label = coords ? 'Current location' : (city || null);
+  const subtitle = coords ? 'Near you' : (city ? 'Within 15 miles' : null);
+
+  return { city, coords, locating, sheetOpen, setSheetOpen, useGps, saveCity, clearLocation, hasLocation, label, subtitle };
 }

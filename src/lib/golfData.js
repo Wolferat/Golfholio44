@@ -43,8 +43,8 @@ export async function dryRunSearch(loc) {
   return res.data;
 }
 
-export async function getLiveTournaments() {
-  const res = await base44.functions.invoke('getGolfListings', { category: 'all' });
+export async function getLiveTournaments(loc = {}) {
+  const res = await base44.functions.invoke('getGolfListings', { category: 'all', ...loc });
   const now = new Date();
   const eventTypes = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
   return (res.data.items || [])
@@ -56,8 +56,8 @@ export async function getLiveTournaments() {
     .sort((a, b) => (a.live === b.live ? new Date(a.startsAt) - new Date(b.startsAt) : a.live ? -1 : 1));
 }
 
-export async function getTournament(id) {
-  const res = await base44.functions.invoke('getGolfListings', { category: 'all' });
+export async function getTournament(id, loc = {}) {
+  const res = await base44.functions.invoke('getGolfListings', { category: 'all', ...loc });
   const eventTypes = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
   return (res.data.items || []).find((t) => t.id === id && eventTypes.has(t.type)) || null;
 }
