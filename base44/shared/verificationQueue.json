@@ -1,0 +1,114 @@
+{
+  "generatedAt": "2026-09-17T23:35:00Z",
+  "reference": "ZIP 75169 (Wills Point, TX) 32.7143, -96.0069",
+  "method": "Read-only scan of stored fields only. Name-based golf signal (golf|country club|driving range, excluding disc/disk golf). Description field ignored (contaminated proximity text). No Google Places, no AI discovery, no new sources. Official URLs of approval candidates were fetched only to verify name/location/golf purpose.",
+  "summary": {
+    "totalRecords": 324,
+    "alreadyGolfVerified": 6,
+    "approvalCandidatesRemaining": 94,
+    "approvalCandidatesInThisBatch": 9,
+    "holdTotal": 37,
+    "cleanupTotal": 179
+  },
+  "approvalCandidateIds": [
+    "6aa485ac26c858720b49ca80",
+    "6aa485ac26c858720b49ca7e",
+    "6aa485ac26c858720b49ca81",
+    "6aa485ac26c858720b49ca8d",
+    "6aa485ac26c858720b49ca98",
+    "6aa485ac26c858720b49ca8c",
+    "6aa485ac26c858720b49ca91",
+    "6aa485ac26c858720b49ca86",
+    "6aa485ac26c858720b49ca90"
+  ],
+  "holdByReason": {
+    "missing_official_url": [
+      "6aa485ac26c858720b49ca94",
+      "6aa485ac26c858720b49ca9f",
+      "6aa485ac26c858720b49ca99",
+      "6aac0d1a95d65dca3e5154dd",
+      "6aaa40a3c37823b6e34ee0c1",
+      "6aaa40a33c370ef3b91d508d",
+      "6aac6d47ed1d380c44d6ed19",
+      "6aaa54e0a14a7c04882ca737",
+      "6aaa54e0a14a7c04882ca734",
+      "6aa48342cb3296a2fe9a74e8",
+      "6aa485ac26c858720b49caa0"
+    ],
+    "conflicting_non_golf_signal": [
+      "6aa485ac26c858720b49ca9c"
+    ],
+    "duplicate_same_place_id": [
+      "6aaa40a33c370ef3b91d5093",
+      "6aab4ff002564041ffbe412c",
+      "6aaa40a33c370ef3b91d5087",
+      "6aaa40a33c370ef3b91d5089",
+      "6aaa40a33c370ef3b91d508a",
+      "6aab4ff002564041ffbe412a",
+      "6aab4ff002564041ffbe4130",
+      "6aab4ff002564041ffbe4132",
+      "6aaa40a33c370ef3b91d5083",
+      "6aab4ff002564041ffbe412f",
+      "6aaa40a33c370ef3b91d5094",
+      "6aaa40a33c370ef3b91d5086",
+      "6aab4ff002564041ffbe4135",
+      "6aab4ff002564041ffbe412e",
+      "6aab4ff002564041ffbe4134",
+      "6aab4ff002564041ffbe4138",
+      "6aaa40a33c370ef3b91d5088",
+      "6aaa40a33c370ef3b91d5092",
+      "6aac755e09292b7d2b624ece",
+      "6aaa40a33c370ef3b91d508e",
+      "6aaa40a33c370ef3b91d5095",
+      "6aab4ff002564041ffbe412d",
+      "6aab4ff002564041ffbe4137",
+      "6aab4ff002564041ffbe4139",
+      "6aab4ff002564041ffbe4131"
+    ]
+  },
+  "cleanupByReason": {
+    "other_non_golf": [
+      "6aabc8912bbfc1e4be492c58", "6aab4ff09a2c786ddf9a9b79", "6aab4ff09a2c786ddf9a9b7a", "6aab4ff09a2c786ddf9a9b7c", "6aab4ff09a2c786ddf9a9b7e", "6aab4ff09a2c786ddf9a9b86", "6aab4ff09a2c786ddf9a9b89", "6aab4ff002564041ffbe4126", "6aab4ff002564041ffbe4127", "6aab4ff002564041ffbe4129", "6aab4ff002564041ffbe412b", "6aab4ff002564041ffbe4133", "6aab4ff002564041ffbe4136", "6aaa54e0a14a7c04882ca732", "6aaa54e0a14a7c04882ca73b", "6aaa54e0a14a7c04882ca72e", "6aaa40a3c37823b6e34ee0b8", "6aaa40a3c37823b6e34ee0b9", "6aaa40a3c37823b6e34ee0bf", "6aaa40a3c37823b6e34ee0c0", "6aaa40a3c37823b6e34ee0c3", "6aaa40a3c37823b6e34ee0c4", "6aaa40a3c37823b6e34ee0c5", "6aaa40a33c370ef3b91d5084", "6aaa40a33c370ef3b91d5085", "6aaa40a33c370ef3b91d508b", "6aaa40a33c370ef3b91d508c", "6aaa40a33c370ef3b91d508f", "6aaa40a33c370ef3b91d5090", "6aaa40a33c370ef3b91d5091", "6aaa1d3cbd18d499ad4d0e5a", "6aaa1d3cbd18d499ad4d0e5b", "6aaa1d3cbd18d499ad4d0e5c", "6aa9552c9c95c9fd845e864a", "6aa6d6a2e9c1c116d6a86584", "6aa4891fbf88a83d4660669e", "6aa485ac26c858720b49ca97", "6aa485ac26c858720b49ca9b", "6aa485ac26c858720b49ca9e", "6aa485ac26c858720b49ca68", "6aa485ac26c858720b49ca6a", "6aa485ac26c858720b49ca6e", "6aa485ac26c858720b49ca6f", "6aa485ac26c858720b49ca72", "6aa485ac26c858720b49ca78", "6aa485ac26c858720b49ca7a", "6aa485ac26c858720b49ca7f", "6aa485ac26c858720b49ca83", "6aa485ac26c858720b49ca84", "6aa485ac26c858720b49ca89", "6aa485ac26c858720b49ca41", "6aa485ac26c858720b49ca4e", "6aa485ac26c858720b49ca4f", "6aa485ac26c858720b49ca50", "6aa485ac26c858720b49ca54", "6aa485ac26c858720b49ca57", "6aa485ac26c858720b49ca58", "6aa4835b306a18a7483a1bb9", "6aa48342cb3296a2fe9a74d4", "6aa48342cb3296a2fe9a74d9", "6aa48342cb3296a2fe9a74dc", "6aa48342cb3296a2fe9a74dd", "6aa48342cb3296a2fe9a74de", "6aa48342cb3296a2fe9a74e1", "6aa48342cb3296a2fe9a74e2", "6aa48342cb3296a2fe9a74e3", "6aa48342cb3296a2fe9a74e4", "6aa48342cb3296a2fe9a74e9", "6aa48342cb3296a2fe9a74ea", "6aa483221caa3c092e0a1a89", "6aa483221caa3c092e0a1a90", "6aa483221caa3c092e0a1a91", "6aa483221caa3c092e0a1a99", "6aa483221caa3c092e0a1a9a", "6aa483221caa3c092e0a1a9d", "6aa483221caa3c092e0a1a85", "6aa483221caa3c092e0a1a87", "6aa483221caa3c092e0a1a88", "6aa4824be7d97958188f7870", "6aa4824be7d97958188f7875", "6aa4824be7d97958188f7877", "6aa4824be7d97958188f7878", "6aa4824be7d97958188f787a", "6aa4824be7d97958188f787b", "6aa4824be7d97958188f7881", "6aa4824be7d97958188f7882", "6aa4824be7d97958188f7883"
+    ],
+    "hotel_lodging": [
+      "6aa485ac26c858720b49ca63", "6aa485ac26c858720b49ca6b", "6aa485ac26c858720b49ca42", "6aa485ac26c858720b49ca48", "6aa485ac26c858720b49ca52", "6aa485ac26c858720b49ca53", "6aa485ac26c858720b49ca55", "6aa4824be7d97958188f7871", "6aa4824be7d97958188f7872", "6aa4824be7d97958188f7874", "6aa4824be7d97958188f7876", "6aa4824be7d97958188f7879", "6aa4824be7d97958188f7886", "6aa4824be7d97958188f7888"
+    ],
+    "cemetery_funeral": [
+      "6aa485ac26c858720b49ca43", "6aa485ac26c858720b49ca62", "6aa48342cb3296a2fe9a74d6", "6aa48342cb3296a2fe9a74d8", "6aa48342cb3296a2fe9a74da", "6aa483221caa3c092e0a1a8c", "6aa483221caa3c092e0a1a8d", "6aa483221caa3c092e0a1a8f", "6aa483221caa3c092e0a1a92", "6aa483221caa3c092e0a1a93", "6aa483221caa3c092e0a1a95", "6aa483221caa3c092e0a1a97", "6aa483221caa3c092e0a1a9b", "6aa483221caa3c092e0a1a9c"
+    ],
+    "church": [
+      "6aa485ac26c858720b49ca64", "6aa485ac26c858720b49ca65", "6aa485ac26c858720b49ca6c", "6aa485ac26c858720b49ca74", "6aa485ac26c858720b49ca76", "6aa485ac26c858720b49ca5b", "6aa485ac26c858720b49ca5c", "6aa485ac26c858720b49ca5d", "6aa485ac26c858720b49ca5e", "6aa485ac26c858720b49ca5f", "6aa485ac26c858720b49ca61", "6aa483221caa3c092e0a1a8e"
+    ],
+    "retail_store": [
+      "6aaa40a3c37823b6e34ee0ca", "6aaa40a33c370ef3b91d5096", "6aa485ac26c858720b49ca67", "6aa485ac26c858720b49ca44", "6aa485ac26c858720b49ca45", "6aa485ac26c858720b49ca49", "6aa485ac26c858720b49ca4b", "6aa485ac26c858720b49ca4d", "6aa485ac26c858720b49ca59", "6aa483221caa3c092e0a1a98", "6aa4824be7d97958188f787d", "6aa4824be7d97958188f787e", "6aa4824be7d97958188f7884"
+    ],
+    "restaurant_food": [
+      "6aa485ac26c858720b49ca73", "6aa485ac26c858720b49ca77", "6aa485ac26c858720b49ca79", "6aa485ac26c858720b49ca7b", "6aa485ac26c858720b49ca7c", "6aa48342cb3296a2fe9a74d7", "6aa483221caa3c092e0a1a8b", "6aa483221caa3c092e0a1a94", "6aa483221caa3c092e0a1a96", "6aa483221caa3c092e0a1a86"
+    ],
+    "school": [
+      "6aa485ac26c858720b49ca69", "6aa485ac26c858720b49ca70", "6aa485ac26c858720b49ca71", "6aa485ac26c858720b49ca56", "6aa485ac26c858720b49ca5a", "6aa485ac26c858720b49ca60", "6aa48342cb3296a2fe9a74d5", "6aa4824be7d97958188f787c", "6aa4824be7d97958188f7885"
+    ],
+    "entertainment_attraction": [
+      "6aaa54e0a14a7c04882ca73c", "6aa485ac26c858720b49ca47", "6aa485ac26c858720b49ca51", "6aa4835b306a18a7483a1bba", "6aa4824be7d97958188f7887"
+    ],
+    "park_recreation": [
+      "6aa485ac26c858720b49ca66", "6aa485ac26c858720b49ca92", "6aa485ac26c858720b49ca4a", "6aa485ac26c858720b49ca4c", "6aa4824be7d97958188f7873"
+    ],
+    "medical": [
+      "6aa485ac26c858720b49ca46", "6aa48342cb3296a2fe9a74db", "6aa4824be7d97958188f7880"
+    ],
+    "other_business": [
+      "6aab4ff09a2c786ddf9a9b7b", "6aab4ff002564041ffbe4128"
+    ],
+    "atm_bank": [
+      "6aa485ac26c858720b49ca6d", "6aa483221caa3c092e0a1a8a"
+    ],
+    "municipality_place": [
+      "6aa485ac26c858720b49ca75", "6aa4824be7d97958188f787f"
+    ],
+    "disc_golf_out_of_scope": [
+      "6aa485ac26c858720b49ca9d"
+    ]
+  },
+  "note": "Read-only. No listing records were modified. This file is a preserved queue snapshot for later admin action."
+}
