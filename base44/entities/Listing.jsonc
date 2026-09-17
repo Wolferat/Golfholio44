@@ -142,6 +142,17 @@
     },
     "photo_source_url": {
       "type": "string"
+    },
+    "golf_verified": {
+      "type": "boolean",
+      "default": false
+    },
+    "golf_verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "golf_verified_by": {
+      "type": "string"
     }
   },
   "required": [

@@ -57,9 +57,9 @@ export default async function(req) {
       // Exclude expired events from public discovery
       if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now) continue;
 
-      // Fail closed: only positively golf-related records appear publicly.
-      // Ambiguous/non-golf names stay in the admin queue until explicitly approved.
-      if (!isPositivelyGolfRelated(r)) continue;
+      // Fail closed: a record must be positively golf-related OR have a manual golf-verification override.
+      // Ambiguous/non-golf names stay in the admin queue until an admin explicitly verifies them.
+      if (!r.golf_verified && !isPositivelyGolfRelated(r)) continue;
 
       // Credible-source filter: require verified tier 1-4 AND a recorded source_url.
       // No fallback to bare website/official_website without a verified tier.

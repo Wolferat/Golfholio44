@@ -30,9 +30,15 @@ function computeDistance(r) {
   return Math.round(haversineMi(SHERMAN.lat, SHERMAN.lng, r.latitude, r.longitude) * 10) / 10;
 }
 
+// A plain website is NOT a credible verified source.
+// Credible source = verification_tier 1-4 AND a recorded source_url.
 function hasCredibleSource(r) {
-  return (r.verification_tier != null && r.verification_tier >= 1 && r.verification_tier <= 4)
-    || !!r.source_url || !!r.official_website || !!r.website;
+  const tier = r.verification_tier;
+  return tier != null && tier >= 1 && tier <= 4 && !!r.source_url;
+}
+
+function hasAnySourceCandidate(r) {
+  return !!r.source_url || !!r.official_website || !!r.website;
 }
 
 function hasUnverifiedPhotos(r) {
@@ -52,7 +58,9 @@ function recommendAction(r, reasons) {
   if (reasons.includes('invalid type')) return 'Flag for human review';
   if (reasons.includes('duplicate')) return 'Duplicate review';
   if (reasons.includes('out of radius')) return 'Keep hidden';
-  if (reasons.includes('no credible source')) return 'Re-verify';
+  if (reasons.includes('missing verification metadata')) return 'Promote to tier 1-4 + add source_url';
+  if (reasons.includes('no source candidate')) return 'Find source or reject';
+  if (reasons.includes('website unverified')) return 'Verify website → promote tier';
   if (reasons.includes('unverified photos')) return 'Suppress photo / re-verify photo';
   return 'Keep approved';
 }
@@ -73,7 +81,9 @@ export default async function(req) {
       outOfRadius: [],
       categoryMismatches: [],
       duplicates: [],
-      noCredibleSource: [],
+      missingVerificationMetadata: [],
+      noSourceCandidate: [],
+      websiteUnverified: [],
       unverifiedPhotos: [],
       expiredEvents: [],
       legacyTypes: [],
@@ -128,10 +138,29 @@ export default async function(req) {
         seenPlaceIds.get(r.place_id).push(r);
       }
 
-      // 5. No credible source
-      if (!hasCredibleSource(r)) {
-        reasons.push('no credible source');
-        audit.noCredibleSource.push({ id: r.id, name: r.name, type: r.type, status: r.status });
+      // 5a. Missing required public verification metadata (no tier 1-4 and/or no source_url)
+      const tier = r.verification_tier;
+      const hasCredibleTier = tier != null && tier >= 1 && tier <= 4;
+      const hasSourceUrl = !!r.source_url;
+      if (!hasCredibleTier || !hasSourceUrl) {
+        reasons.push('missing verification metadata');
+        audit.missingVerificationMetadata.push({
+          id: r.id, name: r.name, type: r.type, status: r.status,
+          verification_tier: tier ?? null,
+          has_source_url: hasSourceUrl,
+        });
+      }
+
+      // 5b. No website or source candidate at all
+      if (!hasAnySourceCandidate(r)) {
+        reasons.push('no source candidate');
+        audit.noSourceCandidate.push({ id: r.id, name: r.name, type: r.type, status: r.status });
+      }
+
+      // 5c. Has a website but remains unverified (no tier 1-4)
+      if ((r.website || r.official_website) && !hasCredibleTier) {
+        reasons.push('website unverified');
+        audit.websiteUnverified.push({ id: r.id, name: r.name, type: r.type, status: r.status, website: r.website || r.official_website });
       }
 
       // 6. Unverified photos
@@ -161,8 +190,10 @@ export default async function(req) {
         distance,
         status: r.status,
         claim_status: r.claim_status || 'unclaimed',
-        source_url: r.source_url || r.official_website || r.website || '',
+        source_url: r.source_url || '',
+        has_website: !!(r.website || r.official_website),
         verification_tier: r.verification_tier ?? null,
+        golf_verified: r.golf_verified || false,
         photo_count: Array.isArray(r.photos) ? r.photos.length : 0,
         photo_verified: r.photo_verified || false,
         audit_reasons: reasons,
@@ -206,7 +237,9 @@ export default async function(req) {
       outOfRadius: audit.outOfRadius.length,
       categoryMismatches: audit.categoryMismatches.length,
       duplicates: audit.duplicates.length,
-      noCredibleSource: audit.noCredibleSource.length,
+      missingVerificationMetadata: audit.missingVerificationMetadata.length,
+      noSourceCandidate: audit.noSourceCandidate.length,
+      websiteUnverified: audit.websiteUnverified.length,
       unverifiedPhotos: audit.unverifiedPhotos.length,
       expiredEvents: audit.expiredEvents.length,
       legacyTypes: audit.legacyTypes.length,

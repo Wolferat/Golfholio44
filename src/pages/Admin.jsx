@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX, Table2 } from 'lucide-react';
+import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX, Table2, BadgeCheck, Globe, FileQuestion } from 'lucide-react';
 import { getPendingPhotos, reviewPhoto, getFlaggedListings, getPendingListings, reviewListingAction, getAuditReport } from '@/lib/golfData';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -182,7 +182,9 @@ function AuditReport({ audit }) {
         <StatCard label="Out of radius" value={summary.outOfRadius} icon={MapPin} />
         <StatCard label="Bad categories" value={summary.categoryMismatches} icon={AlertTriangle} />
         <StatCard label="Duplicates" value={summary.duplicates} icon={Copy} />
-        <StatCard label="No source" value={summary.noCredibleSource} icon={Link2Off} />
+        <StatCard label="Missing verification" value={summary.missingVerificationMetadata} icon={BadgeCheck} danger />
+        <StatCard label="No source candidate" value={summary.noSourceCandidate} icon={Link2Off} />
+        <StatCard label="Website unverified" value={summary.websiteUnverified} icon={Globe} />
         <StatCard label="Unverified photos" value={summary.unverifiedPhotos} icon={ImageUp} />
         <StatCard label="Expired events" value={summary.expiredEvents} icon={CalendarX} />
       </div>
@@ -201,8 +203,14 @@ function AuditReport({ audit }) {
       {details.expiredEvents.length > 0 && (
         <AuditSection title="Past events still public" items={details.expiredEvents} render={(r) => `${r.name} — ended ${String(r.endsAt).slice(0, 10)}`} />
       )}
-      {details.noCredibleSource.length > 0 && (
-        <AuditSection title="No credible source" items={details.noCredibleSource} render={(r) => `${r.name} (${r.type}, ${r.status})`} />
+      {details.missingVerificationMetadata.length > 0 && (
+        <AuditSection title="Missing verification metadata" items={details.missingVerificationMetadata} render={(r) => `${r.name} — tier ${r.verification_tier ?? 'none'}, source_url: ${r.has_source_url ? 'yes' : 'no'}`} />
+      )}
+      {details.noSourceCandidate.length > 0 && (
+        <AuditSection title="No source candidate at all" items={details.noSourceCandidate} render={(r) => `${r.name} (${r.type}, ${r.status})`} />
+      )}
+      {details.websiteUnverified.length > 0 && (
+        <AuditSection title="Website present but unverified" items={details.websiteUnverified} render={(r) => `${r.name} — ${r.website}`} />
       )}
       {details.unverifiedPhotos.length > 0 && (
         <AuditSection title="Unverified photos" items={details.unverifiedPhotos} render={(r) => `${r.name} — ${r.photoCount} photo(s)`} />
