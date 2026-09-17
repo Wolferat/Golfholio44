@@ -4,7 +4,7 @@ import BottomSheet from './BottomSheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-export default function LocationSheet({ open, onClose, city, onSave, onUseGps, locating, hasCoords }) {
+export default function LocationSheet({ open, onClose, city, onSave, onUseGps, locating, hasCoords, locationError }) {
   const [draft, setDraft] = useState(city);
 
   useEffect(() => { if (open) setDraft(city || ''); }, [open, city]);
@@ -22,6 +22,9 @@ export default function LocationSheet({ open, onClose, city, onSave, onUseGps, l
           <Crosshair className="h-4 w-4" />
           {locating ? 'Locating…' : hasCoords ? 'Using current location' : 'Use my location'}
         </button>
+        {locationError && (
+          <p className="text-xs text-destructive mt-2 text-center">{locationError}</p>
+        )}
         <div className="flex items-center gap-3 my-4 text-xs text-muted-foreground">
           <div className="h-px bg-border flex-1" /> or enter a ZIP code <div className="h-px bg-border flex-1" />
         </div>

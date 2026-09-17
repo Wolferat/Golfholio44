@@ -1,7 +1,7 @@
 import { MapPin, Crosshair } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export default function LocationChoicePrompt({ onUseLocation, onEnterZip, locating }) {
+export default function LocationChoicePrompt({ onUseLocation, onEnterZip, locating, locationError }) {
   return (
     <div className="px-4 mt-6">
       <motion.div
@@ -14,6 +14,9 @@ export default function LocationChoicePrompt({ onUseLocation, onEnterZip, locati
         </div>
         <h2 className="text-lg font-bold">Choose a location</h2>
         <p className="text-sm text-muted-foreground mt-1.5">Choose a location to see verified golf nearby.</p>
+        {locationError && (
+          <p className="text-xs text-destructive mt-3">{locationError}</p>
+        )}
         <div className="mt-5 space-y-2.5">
           <button
             onClick={onUseLocation}

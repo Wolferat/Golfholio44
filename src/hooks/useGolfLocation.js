@@ -12,6 +12,7 @@ export function useGolfLocation() {
     try { const raw = localStorage.getItem(COORDS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
   });
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // Pull a saved home_city from the user profile only if nothing is stored locally.
@@ -38,10 +39,14 @@ export function useGolfLocation() {
         setCity(null);
         try { localStorage.setItem(COORDS_KEY, JSON.stringify(c)); localStorage.removeItem(CITY_KEY); } catch {}
         try { base44.auth.updateMe({ home_city: null }); } catch {}
+        setLocationError(null);
         setLocating(false);
         setSheetOpen(false);
       },
-      () => setLocating(false),
+      () => {
+        setLocating(false);
+        setLocationError("Couldn't get your location. Enter a ZIP code to continue.");
+      },
       { enableHighAccuracy: true, timeout: 8000 }
     );
   }, []);
@@ -53,6 +58,7 @@ export function useGolfLocation() {
     setCoords(null);
     try { localStorage.setItem(CITY_KEY, c); localStorage.removeItem(COORDS_KEY); } catch {}
     try { await base44.auth.updateMe({ home_city: c }); } catch {}
+    setLocationError(null);
     setSheetOpen(false);
   }, []);
 
@@ -65,5 +71,5 @@ export function useGolfLocation() {
   const label = coords ? 'Current location' : (city || null);
   const subtitle = coords ? 'Near you' : (city ? 'Within 15 miles' : null);
 
-  return { city, coords, locating, sheetOpen, setSheetOpen, useGps, saveCity, clearLocation, hasLocation, label, subtitle };
+  return { city, coords, locating, locationError, sheetOpen, setSheetOpen, useGps, saveCity, clearLocation, hasLocation, label, subtitle };
 }

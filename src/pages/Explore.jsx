@@ -197,6 +197,7 @@ export default function Explore() {
             onUseLocation={loc.useGps}
             onEnterZip={() => loc.setSheetOpen(true)}
             locating={loc.locating}
+            locationError={loc.locationError}
           />
         )}
 
@@ -217,6 +218,7 @@ export default function Explore() {
         onUseGps={loc.useGps}
         locating={loc.locating}
         hasCoords={!!loc.coords}
+        locationError={loc.locationError}
       />
     </div>
   );
