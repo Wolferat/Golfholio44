@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Crosshair, Check } from 'lucide-react';
+import { Crosshair, Check, X } from 'lucide-react';
 import BottomSheet from './BottomSheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,10 +10,13 @@ export default function LocationSheet({ open, onClose, city, onSave, onUseGps, l
   useEffect(() => { if (open) setDraft(city || ''); }, [open, city]);
 
   return (
-    <BottomSheet open={open} onClose={onClose} maxHeight="60dvh">
-      <div className="p-5">
+    <BottomSheet open={open} onClose={onClose} maxHeight="72dvh">
+      <div className="px-5 pt-1 pb-[calc(1.25rem_+_env(safe-area-inset-bottom))]">
         <h2 className="text-lg font-bold">Your location</h2>
-        <p className="text-sm text-muted-foreground mt-1">Use your current location or enter a ZIP code to find verified golf nearby.</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Use your current location or enter a ZIP code to find verified golf nearby.
+        </p>
+
         <button
           onClick={onUseGps}
           disabled={locating}
@@ -22,18 +25,33 @@ export default function LocationSheet({ open, onClose, city, onSave, onUseGps, l
           <Crosshair className="h-4 w-4" />
           {locating ? 'Locating…' : hasCoords ? 'Using current location' : 'Use my location'}
         </button>
+
         {locationError && (
           <p className="text-xs text-destructive mt-2 text-center">{locationError}</p>
         )}
+
         <div className="flex items-center gap-3 my-4 text-xs text-muted-foreground">
           <div className="h-px bg-border flex-1" /> or enter a ZIP code <div className="h-px bg-border flex-1" />
         </div>
+
         <div className="flex gap-2">
-          <Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="ZIP code" className="h-12 rounded-2xl" />
-          <Button onClick={() => onSave(draft)} className="h-12 rounded-2xl px-4">
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="ZIP code"
+            className="h-12 rounded-2xl"
+          />
+          <Button onClick={() => onSave(draft)} className="h-12 rounded-2xl px-4 shrink-0">
             <Check className="h-4 w-4" /> Save
           </Button>
         </div>
+
+        <button
+          onClick={onClose}
+          className="mt-3 w-full h-11 rounded-2xl glass-card border border-border text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          <X className="h-4 w-4" /> Cancel
+        </button>
       </div>
     </BottomSheet>
   );

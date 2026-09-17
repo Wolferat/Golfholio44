@@ -5,10 +5,10 @@ import { motion } from 'framer-motion';
 import NightHero from '@/components/golf/NightHero';
 import VenueCard from '@/components/golf/VenueCard';
 import VenueDeckSkeleton from '@/components/golf/VenueDeckSkeleton';
-import GolfersCircle from '@/components/golf/GolfersCircle';
 import LiveTicker from '@/components/golf/LiveTicker';
 import LocationSheet from '@/components/golf/LocationSheet';
 import LocationChoicePrompt from '@/components/golf/LocationChoicePrompt';
+import ExploreEmptyState from '@/components/golf/ExploreEmptyState';
 import ListingDetail from '@/components/golf/ListingDetail';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
 import { useGate } from '@/components/golf/GateProvider';
 import { useGolfLocation } from '@/hooks/useGolfLocation';
+import { useNavVisibility } from '@/components/golf/NavVisibilityContext';
 import { cn } from '@/lib/utils';
 
 const CATEGORIES = [
@@ -27,12 +28,11 @@ const CATEGORIES = [
   { key: 'tournament', label: 'Tournaments' },
 ];
 
-const CONSENT_KEY = 'golfolio_contacts_consent';
-
 export default function Explore() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { gate, isAuthed } = useGate();
+  const { setHidden } = useNavVisibility();
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState([]);
@@ -40,16 +40,18 @@ export default function Explore() {
   const [saved, setSaved] = useState(new Set());
   const [selected, setSelected] = useState(null);
   const [tournaments, setTournaments] = useState([]);
-  const [golfers, setGolfers] = useState([]);
   const refreshedFor = useRef('');
-  const [consented, setConsented] = useState(() => {
-    try { return localStorage.getItem(CONSENT_KEY) === '1'; } catch { return false; }
-  });
   const loc = useGolfLocation();
   const initials = (user?.full_name || user?.email || '?').slice(0, 2).toUpperCase();
 
+  // Hide the mobile bottom nav while any location sheet is open so the
+  // ZIP field, Save, error text, and Cancel control are never covered.
+  useEffect(() => {
+    setHidden(loc.sheetOpen);
+    return () => setHidden(false);
+  }, [loc.sheetOpen, setHidden]);
+
   // Location is required before any player-facing query runs.
-  // No location → no fetch, no default city, no cached/fallback records.
   const locParam = loc.coords
     ? { lat: loc.coords.lat, lng: loc.coords.lng }
     : (loc.city ? { near: loc.city } : null);
@@ -116,19 +118,19 @@ export default function Explore() {
 
         {loc.hasLocation ? (
           <>
-            <div className="px-4 -mt-6 relative z-10">
+            <div className="px-4 mt-4">
               <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search courses, events…"
-                  className="h-12 pl-10 glass-card border-primary/20 rounded-2xl"
+                  className="h-12 pl-10 glass-card border-primary/20 rounded-2xl w-full"
                 />
               </div>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 py-4">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 py-3">
               {CATEGORIES.map((c) => (
                 <motion.button
                   key={c.key}
@@ -152,13 +154,7 @@ export default function Explore() {
               </div>
             )}
 
-            <div className="px-4 mt-4">
-              {isAuthed && (
-                <GolfersCircle golfers={golfers} onGolfers={setGolfers} consented={consented} onConsented={setConsented} />
-              )}
-            </div>
-
-            <section className="px-4 mt-6">
+            <section className="px-4 mt-5">
               <div className="flex items-end justify-between mb-1">
                 <h2 className="text-xl font-extrabold tracking-tight">Near you now</h2>
                 <span className="text-xs text-muted-foreground">
@@ -169,13 +165,7 @@ export default function Explore() {
               {loading ? (
                 <VenueDeckSkeleton />
               ) : items.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Search className="h-9 w-9 mx-auto mb-3 opacity-40" />
-                  <p className="font-medium text-sm">No verified listings in this area yet.</p>
-                  <button onClick={() => loc.setSheetOpen(true)} className="text-xs mt-2 text-primary font-semibold">
-                    Change location
-                  </button>
-                </div>
+                <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
               ) : (
                 <div className="grid grid-cols-1 gap-3.5">
                   {items.map((item, i) => (

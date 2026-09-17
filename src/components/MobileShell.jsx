@@ -3,6 +3,7 @@ import { Compass, Flag, CalendarClock, Users, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useGate } from '@/components/golf/GateProvider';
+import { NavVisibilityProvider, useNavVisibility } from '@/components/golf/NavVisibilityContext';
 
 const TABS = [
   { to: '/', label: 'Courses', icon: Compass, end: true },
@@ -12,9 +13,10 @@ const TABS = [
   { to: '/profile', label: 'Profile', icon: User, end: false },
 ];
 
-export default function MobileShell() {
+function Shell() {
   const location = useLocation();
   const { gate, isAuthed } = useGate();
+  const { hidden: navHidden } = useNavVisibility();
   return (
     <div className="min-h-dvh grid-stage md:flex md:items-start md:justify-center">
       <div className="w-full max-w-md mx-auto bg-background min-h-dvh relative md:border-x md:border-border md:shadow-2xl">
@@ -32,7 +34,7 @@ export default function MobileShell() {
           </AnimatePresence>
         </main>
         <nav
-          className="fixed bottom-0 inset-x-0 z-50"
+          className={cn('fixed bottom-0 inset-x-0 z-50 transition-opacity', navHidden && 'hidden')}
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="max-w-md mx-auto glass border-t border-border grid grid-cols-5 h-16">
@@ -81,5 +83,13 @@ export default function MobileShell() {
         </nav>
       </div>
     </div>
+  );
+}
+
+export default function MobileShell() {
+  return (
+    <NavVisibilityProvider>
+      <Shell />
+    </NavVisibilityProvider>
   );
 }
