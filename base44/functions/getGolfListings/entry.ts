@@ -1,14 +1,22 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
-import { haversineMi, geocode, isPositivelyGolfRelated } from '../../shared/googlePlaces.ts';
+import { geocode } from '../../shared/googlePlaces.ts';
+import {
+  evaluatePublicListing,
+  publicPhoto,
+  EVENT_TYPES,
+} from '../../shared/publicListingPolicy.ts';
 
-const RADIUS_MI = 15;
-
-const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
-
-export default async function(req) {
+export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
+
+    // Require an authenticated player session for real listing data.
+    let user = null;
+    try {
+      user = await base44.auth.me();
+    } catch {}
+    if (!user) return Response.json({ items: [] });
 
     const body = await req.json().catch(() => ({}));
     const category = body.category || 'all';
@@ -17,76 +25,52 @@ export default async function(req) {
     const lng = body.lng != null ? Number(body.lng) : null;
     const near = (body.near || '').trim();
 
-    // Player location is REQUIRED. There is no silent default to any fixed city.
-    // The center must come from the player's device GPS (lat/lng) or a ZIP/place
-    // they explicitly entered (near). Geocoding of `near` happens server-side.
+    // Player location is REQUIRED. No silent default to any fixed city.
     let centerLat = null;
     let centerLng = null;
 
-    if (lat != null && lng != null) {
+    if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
       centerLat = lat;
       centerLng = lng;
     } else if (near) {
       const key = secrets.get('GOOGLE_PLACES_API_KEY');
       if (key) {
         const g = await geocode(key, near);
-        if (g) { centerLat = g.lat; centerLng = g.lng; }
+        if (g) {
+          centerLat = g.lat;
+          centerLng = g.lng;
+        }
       }
     }
 
-    // No location selected → no results. Never fall back to a hardcoded city.
-    if (centerLat == null || centerLng == null) {
-      return Response.json({ items: [] });
-    }
+    if (centerLat == null || centerLng == null) return Response.json({ items: [] });
 
-    // Public queries: approved listings only
     let records = await base44.asServiceRole.entities.Listing.filter({ status: 'approved' });
 
-    // 1:1 category mapping — category keys match entity type values
     if (category && category !== 'all') {
       records = records.filter((r) => r.type === category);
     }
-
     if (query) {
       const q = query.toLowerCase();
-      records = records.filter((r) =>
-        (r.name || '').toLowerCase().includes(q) ||
-        (r.city || '').toLowerCase().includes(q) ||
-        (r.venue_name || '').toLowerCase().includes(q)
+      records = records.filter(
+        (r) =>
+          (r.name || '').toLowerCase().includes(q) ||
+          (r.city || '').toLowerCase().includes(q) ||
+          (r.venue_name || '').toLowerCase().includes(q)
       );
     }
 
-    const now = new Date();
     const items = [];
-
     for (const r of records) {
-      // Exclude expired events from public discovery
-      if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < now) continue;
-
-      // Fail closed: a record must be positively golf-related OR have a manual golf-verification override.
-      // Ambiguous/non-golf names stay in the admin queue until an admin explicitly verifies them.
-      if (!r.golf_verified && !isPositivelyGolfRelated(r)) continue;
-
-      // Credible-source filter: require verified tier 1-4 AND a recorded source_url.
-      // No fallback to bare website/official_website without a verified tier.
-      const tier = r.verification_tier;
-      const hasCredibleTier = tier != null && tier >= 1 && tier <= 4;
-      const hasSourceUrl = !!r.source_url;
-      if (!hasCredibleTier || !hasSourceUrl) continue;
-
-      // Enforce 15-mile radius server-side using coordinates
-      if (r.latitude == null || r.longitude == null) continue;
-      const distance = Math.round(haversineMi(centerLat, centerLng, r.latitude, r.longitude) * 10) / 10;
-      if (distance > RADIUS_MI) continue;
-
-      // Photo filter: only verified photos (photo_verified === true) appear publicly.
-      // Unverified legacy photos are hidden from all player-facing views; listing stays visible with neutral fallback.
-      const publicPhoto = r.photo_verified === true && Array.isArray(r.photos) && r.photos.length ? r.photos[0] : null;
-
+      const ev = evaluatePublicListing(r, centerLat, centerLng);
+      if (!ev) continue;
       const startsAt = r.starts_at || null;
       const endsAt = r.ends_at || null;
-      const isLive = EVENT_TYPES.has(r.type) && startsAt && new Date(startsAt) <= now && (!endsAt || new Date(endsAt) >= now);
-
+      const isLive =
+        EVENT_TYPES.has(r.type) &&
+        startsAt &&
+        new Date(startsAt) <= new Date() &&
+        (!endsAt || new Date(endsAt) >= new Date());
       items.push({
         id: r.id,
         type: r.type,
@@ -103,9 +87,9 @@ export default async function(req) {
         website: r.official_website || r.website,
         phone: r.phone,
         address: r.address,
-        photo: publicPhoto,
+        photo: publicPhoto(r),
         rating: r.rating ?? null,
-        distance,
+        distance: ev.distance,
         coords: true,
         is_professional_tournament: r.is_professional_tournament || false,
         official_registration_url: r.official_registration_url || null,
@@ -119,6 +103,7 @@ export default async function(req) {
 
     return Response.json({ items });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    // Fail closed: any error → empty result set.
+    return Response.json({ items: [] });
   }
 }

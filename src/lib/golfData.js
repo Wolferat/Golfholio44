@@ -32,15 +32,9 @@ export async function toggleFavorite(id) {
   return res.data.saved;
 }
 
-export async function refreshNearby(loc) {
-  const res = await base44.functions.invoke('liveSearchListings', loc);
-  return res.data;
-}
-
-// Admin-only read-only discovery: returns candidate details without storing anything.
-export async function dryRunSearch(loc) {
-  const res = await base44.functions.invoke('liveSearchListings', { ...loc, dry_run: true });
-  return res.data;
+export async function getListingById(id, loc = {}) {
+  const res = await base44.functions.invoke('getListingDetails', { id, ...loc });
+  return res.data.item || null;
 }
 
 export async function getLiveTournaments(loc = {}) {
@@ -57,9 +51,11 @@ export async function getLiveTournaments(loc = {}) {
 }
 
 export async function getTournament(id, loc = {}) {
-  const res = await base44.functions.invoke('getGolfListings', { category: 'all', ...loc });
+  const res = await base44.functions.invoke('getListingDetails', { id, ...loc });
+  const item = res.data.item;
+  if (!item) return null;
   const eventTypes = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
-  return (res.data.items || []).find((t) => t.id === id && eventTypes.has(t.type)) || null;
+  return eventTypes.has(item.type) ? item : null;
 }
 
 export async function matchContacts(phones) {
