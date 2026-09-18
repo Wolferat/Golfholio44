@@ -36,7 +36,7 @@ export default function Settings() {
   const save = async () => {
     setSaving(true);
     try {
-      await base44.auth.updateMe({ phone, home_city, notifications, privacy });
+      await base44.auth.updateMe({ phone, home_city: homeCity, notifications, privacy });
       toast({ title: 'Settings saved' });
     } catch {
       toast({ title: 'Could not save settings' });
