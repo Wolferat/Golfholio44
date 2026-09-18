@@ -7,6 +7,21 @@
         "admin",
         "user"
       ]
+    },
+    "home_city": {
+      "type": "string",
+      "description": "Player's home city or ZIP for Explore prefill"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "notifications": {
+      "type": "boolean",
+      "default": true
+    },
+    "privacy": {
+      "type": "boolean",
+      "default": true
     }
   },
   "required": [

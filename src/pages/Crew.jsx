@@ -19,9 +19,9 @@ export default function Crew() {
           <div className="h-16 w-16 rounded-full bg-primary/12 border border-primary/30 grid place-items-center mx-auto mb-4">
             <Users className="h-7 w-7 text-primary" />
           </div>
-          <h2 className="text-lg font-bold">Crew is coming soon</h2>
+          <h2 className="text-lg font-bold">No player connections to show yet</h2>
           <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-            You'll be able to find golfers by their exact username, connect, and share rounds — all private and invite-only.
+            Connect with golfers by their exact username to share rounds.
           </p>
           <p className="text-xs text-muted-foreground mt-3">
             No connections or activity are shown here yet. Golfolio never displays fake social information.
@@ -31,7 +31,7 @@ export default function Crew() {
         <div className="mt-4 rounded-2xl bg-secondary/40 border border-border p-3.5 flex gap-2.5">
           <Shield className="h-4 w-4 text-accent shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Crew will be invite-only. Your rounds, location, and contact info stay private.
+            Crew is invite-only. Your rounds, location, and contact info stay private.
           </p>
         </div>
       </div>

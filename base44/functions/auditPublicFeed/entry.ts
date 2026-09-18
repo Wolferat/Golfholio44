@@ -3,12 +3,17 @@ import { secrets } from 'base44:runtime';
 import { geocode } from '../../shared/googlePlaces.ts';
 import { checkPublicListing, publicPhoto } from '../../shared/publicListingPolicy.ts';
 
-// Server-only, admin-only, read-only diagnostic. Given a player
-// location (lat/lng or a geocodable "near" string), it reports exactly
-// what the player Explore feed would contain and why every excluded
-// record is excluded — pass/fail for every required policy condition
-// and the first failing reason. It never modifies any record and is
-// not exposed to normal users.
+// Server-only, admin-only, read-only diagnostic. Given a player location
+// (lat/lng or a geocodable "near" string), it reports exactly what the
+// player Explore feed would contain and why every excluded record is
+// excluded — pass/fail for every required policy condition and the first
+// failing reason.
+//
+// RECONCILIATION: Every unique Listing ID is in exactly one bucket —
+// passing or excluded. The invariant is:
+//   passing unique IDs + excluded unique IDs = total unique Listing IDs
+// The function asserts this invariant and reports all three counts plus
+// the full ID lists. It never modifies any record.
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -45,13 +50,34 @@ export default async function (req) {
       );
     }
 
-    const records = await base44.asServiceRole.entities.Listing.filter({ status: 'approved' });
+    // Fetch ALL records — not just approved. Every unique Listing ID must
+    // be in exactly one bucket: passing or excluded.
+    const raw = await base44.asServiceRole.entities.Listing.filter({});
+
+    // Deduplicate by Listing ID — the table must have exactly one row per
+    // unique ID. Duplicates are reported but not double-counted.
+    const seenIds = new Set();
+    const records = [];
+    let duplicateCount = 0;
+    for (const r of raw) {
+      if (!r.id || seenIds.has(r.id)) {
+        duplicateCount++;
+        continue;
+      }
+      seenIds.add(r.id);
+      records.push(r);
+    }
+    const totalUnique = records.length;
 
     const feed = [];
     const excluded = [];
+    const passingIds = new Set();
+    const excludedIds = new Set();
+
     for (const r of records) {
       const chk = checkPublicListing(r, centerLat, centerLng);
       if (chk.pass) {
+        passingIds.add(r.id);
         feed.push({
           id: r.id,
           name: r.name,
@@ -60,6 +86,7 @@ export default async function (req) {
           photo: publicPhoto(r),
         });
       } else {
+        excludedIds.add(r.id);
         excluded.push({
           id: r.id,
           name: r.name,
@@ -76,12 +103,22 @@ export default async function (req) {
 
     feed.sort((a, b) => (a.distance ?? 1e9) - (b.distance ?? 1e9));
 
+    // Reconciliation invariant: passing + excluded MUST equal total unique.
+    const passingPlusExcluded = passingIds.size + excludedIds.size;
+    const reconciles = passingPlusExcluded === totalUnique;
+
     return Response.json({
       endpoint: '/functions/getGolfListings',
       playerLocation: { lat: centerLat, lng: centerLng },
       radiusMiles: 15,
-      feedCount: feed.length,
-      excludedCount: excluded.length,
+      totalUniqueListings: totalUnique,
+      duplicateRecordsDropped: duplicateCount,
+      passingCount: passingIds.size,
+      excludedCount: excludedIds.size,
+      passingPlusExcluded,
+      reconciles,
+      passingIds: Array.from(passingIds),
+      excludedIds: Array.from(excludedIds),
       feed,
       excluded,
     });

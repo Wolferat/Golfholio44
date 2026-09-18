@@ -1,36 +1,26 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
-import { isDuplicate } from '../../shared/googlePlaces.ts';
-
-const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
-
-const UNTRUSTED_HOSTS = [
-  'maps.google.com', 'google.com/maps', 'goo.gl', 'google.com/local',
-  'yelp.com', 'tripadvisor.com', 'facebook.com', 'fb.com', 'm.facebook.com',
-  'instagram.com', 'tiktok.com', 'linkedin.com', 'twitter.com', 'x.com',
-  'youtube.com', 'wikipedia.org', 'foursquare.com', 'yellowpages.com',
-  'mapquest.com', 'bing.com/maps', 'apple.com/maps', 'superpages.com',
-  'business.google.com', 'plus.google.com',
-];
-
-function isTrustedSourceUrl(u) {
-  if (!u || typeof u !== 'string') return false;
-  try {
-    const parsed = new URL(u);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    return !UNTRUSTED_HOSTS.some((b) => host === b || host.endsWith('.' + b));
-  } catch {
-    return false;
-  }
-}
+import { decideVerification } from '../../shared/automatedVerification.ts';
 
 // Automated listing verification.
-// - Classifies golf relevance from structured evidence via LLM (not name keywords alone).
-// - Confirms the official source URL (rejects Google Maps / directory / social).
-// - Approves golf + trusted-source records, rejects non-golf / duplicates,
-//   expires ended events, and keeps weakly-sourced golf records pending.
-// - Skips already-verified approved records (e.g. the 6 manually approved).
-// - Reports every change. dry_run returns the plan without writing.
+//
+// The LLM researches and classifies golf relevance (with web search),
+// but it is NOT the sole authority. Approval requires independently
+// validated evidence from decideVerification():
+//   - golf-related (LLM research + name corroboration)
+//   - category allowed (deterministic)
+//   - source URL official/authoritative (deterministic, NOT LLM)
+//   - source uses valid http/https (deterministic)
+//   - coordinates valid (deterministic)
+//   - not a duplicate (deterministic)
+//   - not an expired event (deterministic)
+//   - not a non-golf/prohibited name (deterministic corroboration)
+//
+// If any evidence is uncertain, the listing stays pending (hidden) and
+// the system retries/rechecks automatically later. A listing must NEVER
+// become public based on a name, generic website, Google snippet, or
+// LLM confidence alone.
+//
+// dry_run returns the plan without writing.
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -43,17 +33,27 @@ export default async function (req) {
     const dryRun = body.dry_run === true;
     const limit = Math.min(Math.max(Number(body.limit) || 25, 1), 50);
 
-    const all = await base44.asServiceRole.entities.Listing.filter({});
-    // Candidates: pending, OR approved-but-unverified. Skip the 6 manually
-    // verified (status=approved && golf_verified=true).
-    const candidates = all
+    const raw = await base44.asServiceRole.entities.Listing.filter({});
+    // Deduplicate by ID
+    const seenIds = new Set();
+    const records = [];
+    for (const r of raw) {
+      if (!r.id || seenIds.has(r.id)) continue;
+      seenIds.add(r.id);
+      records.push(r);
+    }
+
+    // Candidates: pending, OR approved-but-unverified. Skip already
+    // fully verified records (status=approved && golf_verified=true
+    // && tier 1-4 && trusted source_url).
+    const candidates = records
       .filter(
         (r) =>
           r.status === 'pending' ||
           (r.status === 'approved' &&
             (r.golf_verified !== true ||
               r.verification_tier === 5 ||
-              !isTrustedSourceUrl(r.source_url)))
+              !r.source_url))
       )
       .slice(0, limit);
 
@@ -66,22 +66,9 @@ export default async function (req) {
 
     for (const r of candidates) {
       try {
-        // 1. Expire ended events.
-        if (EVENT_TYPES.has(r.type) && r.ends_at && new Date(r.ends_at) < new Date()) {
-          if (!dryRun) {
-            await base44.asServiceRole.entities.Listing.update(r.id, {
-              status: 'expired',
-              verification_notes: 'auto-expired: event ended',
-              verified_at: new Date().toISOString(),
-              verified_by: user.id,
-            });
-          }
-          changes.push({ id: r.id, name: r.name, action: 'expired', reason: 'event ended' });
-          expired++;
-          continue;
-        }
-
-        // 2. LLM classification from structured evidence.
+        // 1. LLM research (with web search) — classifies golf relevance.
+        //    The LLM is NOT the sole authority. It researches and classifies;
+        //    deterministic evidence validation makes the final decision.
         const evidence = {
           name: r.name,
           type: r.type,
@@ -93,92 +80,85 @@ export default async function (req) {
           place_id: r.place_id,
         };
         const prompt =
-          'You are a strict golf-listing trust validator. Given the business evidence, decide:\n' +
+          'You are a golf-listing research assistant. Research the following business online and classify it.\n' +
           '1. is_golf: true only if this is a real golf venue (course, simulator, training facility, tournament, league, or clearly golf-related venue). Disc golf is NOT golf. Reject churches, schools, hotels, restaurants, medical, retail, government, adult/unsafe, and entertainment complexes without golf.\n' +
-          '2. is_official_website: true only if the website field is the official venue/event website (not Google, Yelp, TripAdvisor, Facebook, Instagram, directories, or social).\n' +
-          '3. recommended_tier: 1-4 confidence (4 highest). Use 0 if not golf.\n' +
-          '4. reason: one short sentence.\n' +
+          '2. recommended_tier: 1-4 confidence (4 highest). Use 0 if not golf.\n' +
+          '3. reason: one short sentence citing the evidence you found.\n' +
           'Evidence: ' + JSON.stringify(evidence);
         const llm = await base44.asServiceRole.integrations.Core.InvokeLLM({
           prompt,
+          model: 'gemini_3_flash',
+          add_context_from_internet: true,
           response_json_schema: {
             type: 'object',
             properties: {
               is_golf: { type: 'boolean' },
-              is_official_website: { type: 'boolean' },
               recommended_tier: { type: 'number' },
               reason: { type: 'string' },
             },
-            required: ['is_golf', 'is_official_website', 'recommended_tier', 'reason'],
+            required: ['is_golf', 'recommended_tier', 'reason'],
           },
         });
 
-        const tier = [1, 2, 3, 4].includes(llm.recommended_tier) ? llm.recommended_tier : 0;
-        const officialUrl = r.official_website || r.website || '';
-        const hasTrustedSource = llm.is_official_website && isTrustedSourceUrl(officialUrl);
+        // 2. Determine candidate source URL (deterministic, NOT from LLM).
+        //    Only source_url or official_website may be trusted — never the
+        //    generic website field (typically Google Places).
+        const candidateSourceUrl = r.source_url || r.official_website || '';
+        const recordForDecision = { ...r, source_url: candidateSourceUrl };
 
-        // 3. Non-golf → reject.
-        if (!llm.is_golf || tier === 0) {
-          if (!dryRun) {
-            await base44.asServiceRole.entities.Listing.update(r.id, {
-              status: 'rejected',
-              verification_notes: 'auto-rejected: ' + llm.reason,
-              verified_at: new Date().toISOString(),
-              verified_by: user.id,
-            });
-          }
-          changes.push({ id: r.id, name: r.name, action: 'rejected', reason: llm.reason });
-          rejected++;
-          continue;
-        }
+        // 3. Automated decision: LLM classifies, deterministic evidence validates.
+        const decision = decideVerification(recordForDecision, llm, records);
 
-        // 4. Golf but no trusted official source → keep pending (not public, not rejected).
-        if (!hasTrustedSource) {
-          if (!dryRun) {
-            await base44.asServiceRole.entities.Listing.update(r.id, {
-              verification_tier: tier,
-              verification_notes: 'pending: ' + llm.reason + ' (no trusted official source)',
-            });
-          }
-          changes.push({ id: r.id, name: r.name, action: 'pending_source', tier, reason: 'golf but no trusted official source' });
-          pendingSource++;
-          continue;
-        }
-
-        // 5. Duplicate detection.
-        const dup = isDuplicate({ ...r, website: officialUrl }, all.filter((e) => e.id !== r.id));
-        if (dup.isDup) {
-          if (!dryRun) {
-            await base44.asServiceRole.entities.Listing.update(r.id, {
-              status: 'rejected',
-              verification_notes: 'auto-rejected: duplicate (' + dup.reason + ')',
-              verified_at: new Date().toISOString(),
-              verified_by: user.id,
-            });
-          }
-          changes.push({ id: r.id, name: r.name, action: 'rejected_dup', reason: dup.reason });
-          rejected++;
-          continue;
-        }
-
-        // 6. Approve.
         const now = new Date().toISOString();
-        if (!dryRun) {
-          await base44.asServiceRole.entities.Listing.update(r.id, {
-            status: 'approved',
-            golf_verified: true,
-            golf_verified_at: now,
-            golf_verified_by: user.id,
-            verification_tier: tier,
-            source_url: officialUrl,
-            official_website: officialUrl,
-            verified_at: now,
-            verified_by: user.id,
-            verification_notes: 'auto-verified: ' + llm.reason,
-          });
+        if (decision.action === 'expired') {
+          if (!dryRun) {
+            await base44.asServiceRole.entities.Listing.update(r.id, {
+              status: 'expired',
+              verification_notes: 'auto-expired: event ended',
+              verified_at: now,
+              verified_by: user.id,
+            });
+          }
+          changes.push({ id: r.id, name: r.name, action: 'expired', reason: 'event ended' });
+          expired++;
+        } else if (decision.action === 'rejected') {
+          if (!dryRun) {
+            await base44.asServiceRole.entities.Listing.update(r.id, {
+              status: 'rejected',
+              verification_notes: 'auto-rejected: ' + decision.reasons.join('; '),
+              verified_at: now,
+              verified_by: user.id,
+            });
+          }
+          changes.push({ id: r.id, name: r.name, action: 'rejected', reason: decision.reasons.join('; ') });
+          rejected++;
+        } else if (decision.action === 'pending') {
+          if (!dryRun) {
+            await base44.asServiceRole.entities.Listing.update(r.id, {
+              verification_tier: decision.tier || null,
+              verification_notes: 'pending: ' + decision.reasons.join('; '),
+            });
+          }
+          changes.push({ id: r.id, name: r.name, action: 'pending', reason: decision.reasons.join('; '), tier: decision.tier });
+          pendingSource++;
+        } else if (decision.action === 'approved') {
+          if (!dryRun) {
+            await base44.asServiceRole.entities.Listing.update(r.id, {
+              status: 'approved',
+              golf_verified: true,
+              golf_verified_at: now,
+              golf_verified_by: user.id,
+              verification_tier: decision.tier,
+              source_url: candidateSourceUrl,
+              official_website: r.official_website || candidateSourceUrl,
+              verified_at: now,
+              verified_by: user.id,
+              verification_notes: 'auto-verified: ' + decision.reasons.join('; '),
+            });
+          }
+          changes.push({ id: r.id, name: r.name, action: 'approved', tier: decision.tier, source_url: candidateSourceUrl, reason: decision.reasons.join('; ') });
+          approved++;
         }
-        changes.push({ id: r.id, name: r.name, action: 'approved', tier, source_url: officialUrl, reason: llm.reason });
-        approved++;
       } catch (e) {
         errors++;
         changes.push({ id: r.id, name: r.name, action: 'error', reason: e.message });

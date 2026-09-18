@@ -4,6 +4,7 @@ import {
   publicPhoto,
 } from '../../shared/publicListingPolicy.ts';
 import { resolveConfirmedSourceUrl } from '../../shared/approvalPolicy.ts';
+import { validateEvidence, decideVerification } from '../../shared/automatedVerification.ts';
 
 // Server-side policy test harness. Runs the shared predicate against
 // synthetic in-memory records AND actual current database records.
@@ -188,6 +189,32 @@ export default async function (req) {
   appr('approval: confirm_official_registration_url valid → SUCCEED', { official_registration_url: 'https://reg.example.com' }, { confirm_official_registration_url: true }, true);
   appr('approval: confirm_official_registration_url but field missing → FAIL', { website: 'https://x.com' }, { confirm_official_registration_url: true }, false);
   appr('approval: empty record, empty body → FAIL', {}, {}, false);
+
+  // --- Automated evidence validation ---
+  // The LLM may research and classify, but it must NOT be the sole authority.
+  // Every approval requires independently validated evidence. These tests
+  // verify that each criterion is checked independently and that LLM
+  // confidence alone never approves a listing.
+  const evBase = { name: 'Test Golf Course', type: 'course', source_url: 'https://testcourse.com', latitude: 33.6, longitude: -96.6 };
+  const ev = validateEvidence(evBase);
+  results.push({ case: 'evidence: all criteria pass', pass: ev.categoryAllowed && ev.sourceTrusted && ev.coordsValid && ev.notExpired && ev.notNonGolfName });
+  results.push({ case: 'evidence: category not allowed (lesson)', pass: !validateEvidence({ ...evBase, type: 'lesson' }).categoryAllowed });
+  results.push({ case: 'evidence: source not trusted (Google Maps)', pass: !validateEvidence({ ...evBase, source_url: 'https://maps.google.com/test' }).sourceTrusted });
+  results.push({ case: 'evidence: source not http (ftp)', pass: !validateEvidence({ ...evBase, source_url: 'ftp://test.com' }).sourceTrusted });
+  results.push({ case: 'evidence: coords invalid', pass: !validateEvidence({ ...evBase, latitude: null, longitude: null }).coordsValid });
+  results.push({ case: 'evidence: non-golf name (church)', pass: !validateEvidence({ ...evBase, name: 'St Mary Church' }).notNonGolfName });
+  results.push({ case: 'evidence: expired event', pass: !validateEvidence({ ...evBase, type: 'tournament', ends_at: '2020-01-01T00:00:00Z' }).notExpired });
+
+  const llmGolf = { is_golf: true, recommended_tier: 3, reason: 'golf course confirmed' };
+  results.push({ case: 'decision: LLM golf + all evidence → approve', pass: decideVerification(evBase, llmGolf, []).action === 'approved' });
+  results.push({ case: 'decision: LLM golf but no source → pending', pass: decideVerification({ ...evBase, source_url: '' }, llmGolf, []).action === 'pending' });
+  results.push({ case: 'decision: LLM golf but non-golf name → pending', pass: decideVerification({ ...evBase, name: 'St Mary Church' }, llmGolf, []).action === 'pending' });
+  results.push({ case: 'decision: LLM not golf → reject', pass: decideVerification(evBase, { is_golf: false, recommended_tier: 0, reason: 'not golf' }, []).action === 'rejected' });
+  results.push({ case: 'decision: LLM result missing → pending (fail-closed)', pass: decideVerification(evBase, null, []).action === 'pending' });
+  results.push({ case: 'decision: duplicate → reject', pass: decideVerification(evBase, llmGolf, [{ id: 'other', name: 'Test Golf Course', type: 'course' }]).action === 'rejected' });
+  results.push({ case: 'decision: expired event → expired', pass: decideVerification({ ...evBase, type: 'tournament', ends_at: '2020-01-01T00:00:00Z' }, llmGolf, []).action === 'expired' });
+  results.push({ case: 'decision: LLM golf but bad category → reject', pass: decideVerification({ ...evBase, type: 'lesson' }, llmGolf, []).action === 'rejected' });
+  results.push({ case: 'decision: LLM golf but no coords → pending', pass: decideVerification({ ...evBase, latitude: null, longitude: null }, llmGolf, []).action === 'pending' });
 
   const passed = results.filter((r) => r.pass).length;
   return Response.json({

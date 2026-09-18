@@ -105,7 +105,7 @@ export default function Settings() {
         </Button>
 
         <footer className="text-center text-xs text-muted-foreground pt-4 pb-2">
-          {buildLabel()} · Preview build
+          {buildLabel()}
         </footer>
       </div>
     </div>
