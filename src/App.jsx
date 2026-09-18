@@ -22,6 +22,9 @@ import TournamentLive from './pages/TournamentLive';
 import Crew from './pages/Crew';
 import Profile from '@/pages/Profile';
 import Admin from './pages/Admin';
+import ListingPage from './pages/ListingPage';
+import SavedPlaces from './pages/SavedPlaces';
+import Settings from './pages/Settings';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -62,6 +65,9 @@ const AuthenticatedApp = () => {
             <Route path="/play/:id" element={<ScorecardLive />} />
             <Route path="/tournament/:id" element={<TournamentLive />} />
             <Route path="/tee-times" element={<TeeTimes />} />
+            <Route path="/listing/:id" element={<ListingPage />} />
+            <Route path="/saved" element={<SavedPlaces />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="/crew" element={<Crew />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/admin" element={<Admin />} />

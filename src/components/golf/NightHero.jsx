@@ -2,7 +2,7 @@ import { MapPin, Crosshair } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Image } from '@/components/ui/image';
 
-const HERO_IMG = 'https://media.base44.com/images/public/6aa36b30315f233cc3d6a9b6/42aa12ea6_generated_image.png';
+const HERO_IMG = 'https://media.base44.com/images/public/6aa36b30315f233cc3d6a9b6/0d7f8669e_generated_image.png';
 
 export default function NightHero({ locationLabel, subtitle, onOpenLocation, onUseLocation, locating }) {
   return (

@@ -69,7 +69,7 @@ function isTrustedSourceUrl(u) {
   if (!isValidUrl(u)) return false;
   try {
     const host = new URL(u).hostname.replace(/^www\./, '').toLowerCase();
-    return !UNTRUSTED_HOSTS.some((b) => host === b || host.endsWith('.' + b) || host.includes(b));
+    return !UNTRUSTED_HOSTS.some((b) => host === b || host.endsWith('.' + b));
   } catch {
     return false;
   }

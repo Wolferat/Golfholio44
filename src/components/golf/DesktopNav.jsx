@@ -32,7 +32,7 @@ export default function DesktopNav() {
                 )
               }
             >
-              <l.icon className="h-4 w-4' /> {l.label}
+              <l.icon className="h-4 w-4" /> {l.label}
             </NavLink>
           ))}
         </nav>

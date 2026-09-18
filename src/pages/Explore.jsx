@@ -9,7 +9,7 @@ import LiveTicker from '@/components/golf/LiveTicker';
 import LocationSheet from '@/components/golf/LocationSheet';
 import LocationChoicePrompt from '@/components/golf/LocationChoicePrompt';
 import ExploreEmptyState from '@/components/golf/ExploreEmptyState';
-import ListingDetail from '@/components/golf/ListingDetail';
+import AccountMenu from '@/components/golf/AccountMenu';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
 import { getListings, searchListings, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
@@ -38,7 +38,6 @@ export default function Explore() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(new Set());
-  const [selected, setSelected] = useState(null);
   const [tournaments, setTournaments] = useState([]);
   const refreshedFor = useRef('');
   const loc = useGolfLocation();
@@ -96,9 +95,7 @@ export default function Explore() {
         <div className="h-[60px] px-4 flex items-center justify-between">
           <span className="text-lg font-extrabold tracking-tight">Golfholio</span>
           {isAuthed ? (
-            <div className="h-9 w-9 rounded-full bg-primary/15 border border-primary/40 grid place-items-center text-sm font-bold text-primary">
-              {initials}
-            </div>
+            <AccountMenu initials={initials} />
           ) : (
             <Link to="/register" className="text-sm font-semibold text-primary/90 hover:text-primary transition">
               Sign up
@@ -175,7 +172,7 @@ export default function Explore() {
                       index={i}
                       saved={saved.has(item.id)}
                       onToggleSave={() => handleToggleSave(item.id)}
-                      onOpen={() => setSelected(item)}
+                      onOpen={() => navigate('/listing/' + item.id)}
                     />
                   ))}
                 </div>
@@ -194,12 +191,6 @@ export default function Explore() {
         <div className="h-8" />
       </PullToRefresh>
 
-      <ListingDetail
-        item={selected}
-        saved={selected ? saved.has(selected.id) : false}
-        onToggleSave={() => selected && handleToggleSave(selected.id)}
-        onClose={() => setSelected(null)}
-      />
       <LocationSheet
         open={loc.sheetOpen}
         onClose={() => loc.setSheetOpen(false)}

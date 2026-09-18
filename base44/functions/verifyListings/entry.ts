@@ -18,7 +18,7 @@ function isTrustedSourceUrl(u) {
     const parsed = new URL(u);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    return !UNTRUSTED_HOSTS.some((b) => host === b || host.endsWith('.' + b) || host.includes(b));
+    return !UNTRUSTED_HOSTS.some((b) => host === b || host.endsWith('.' + b));
   } catch {
     return false;
   }
