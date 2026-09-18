@@ -44,6 +44,19 @@ export default function ListingPage() {
     ? { near: loc.city }
     : null;
 
+  const loadListing = async () => {
+    if (!locParam) { setLoading(false); return null; }
+    try {
+      const it = await getListingById(id, locParam);
+      setItem(it);
+      return it;
+    } catch {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -51,15 +64,10 @@ export default function ListingPage() {
         setLoading(false);
         return;
       }
-      try {
-        const it = await getListingById(id, locParam);
-        if (active) setItem(it);
-      } catch {}
-      if (active) setLoading(false);
+      const it = await loadListing();
+      if (!active) return;
     })();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [id, loc.coords, loc.city]);
 
   const handleSave = async () => {
@@ -231,7 +239,13 @@ export default function ListingPage() {
         </div>
 
         <div className="pt-2">
-          <ReviewSection listingId={id} listingName={item.name} />
+          <ReviewSection
+            listingId={id}
+            listingName={item.name}
+            reviews={item.reviews || []}
+            myReview={item.my_review || null}
+            onReload={loadListing}
+          />
         </div>
       </div>
     </div>

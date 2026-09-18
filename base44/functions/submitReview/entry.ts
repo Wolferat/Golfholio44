@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { evaluatePublicListing } from '../../shared/publicListingPolicy.ts';
+import { isValidReviewPhotoUri } from '../../shared/photoValidation.ts';
 
 // ============================================================
 // Submit / Edit Review
@@ -12,6 +13,17 @@ import { evaluatePublicListing } from '../../shared/publicListingPolicy.ts';
 //   uncertain/ error -> pending (fail-closed: hidden until admin)
 //
 // Edits re-run moderation on the new content.
+//
+// Photo handling (secure):
+//   - Players submit review images only through controlled
+//     UploadPrivateFile storage (returns a private file_uri).
+//   - Arbitrary external URLs are rejected — photo_uri must
+//     not be an http/https/ftp/javascript/data URL.
+//   - A temporary signed URL is created server-side for the
+//     LLM safety check. The signed URL is NOT stored.
+//   - The private file_uri is stored; signed URLs are created
+//     on demand by getListingDetails for display.
+//   - Review photos are NEVER used as official venue imagery.
 //
 // Enforces:
 //   - signed-in players only
@@ -41,7 +53,7 @@ export default async function (req) {
     const rating = Number(body.rating);
     const text = (body.body || '').trim();
     const title = (body.title || '').trim();
-    const photoUrl = (body.photo_url || '').trim();
+    const photoUri = (body.photo_uri || '').trim();
     const visitDate = (body.visit_date || '').trim();
     const listingName = (body.listing_name || '').trim();
 
@@ -52,6 +64,11 @@ export default async function (req) {
       return Response.json({ error: 'Review text required (max 2000 chars)' }, { status: 400 });
     if (title.length > 120)
       return Response.json({ error: 'Title must be 120 chars or less' }, { status: 400 });
+
+    // Validate photo_uri — must be a private file URI, never an external URL
+    if (!isValidReviewPhotoUri(photoUri)) {
+      return Response.json({ error: 'Invalid photo — images must be uploaded through the app' }, { status: 400 });
+    }
 
     // Verify listing eligibility (non-location policy checks)
     const record = await base44.asServiceRole.entities.Listing.get(listingId).catch(() => null);
@@ -68,7 +85,7 @@ export default async function (req) {
 
     // One-review-per-player-per-listing (on create only)
     if (!reviewId) {
-      const existing = await base44.entities.Review
+      const existing = await base44.asServiceRole.entities.Review
         .filter({ listing_id: listingId, created_by_id: user.id }, '-created_date', 10)
         .catch(() => []);
       if (existing.length > 0) {
@@ -86,14 +103,29 @@ export default async function (req) {
       }
     } catch {}
 
+    // Create a temporary signed URL for the photo (for LLM validation only)
+    let photoSignedUrl: string | null = null;
+    if (photoUri) {
+      try {
+        const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({
+          file_uri: photoUri,
+          expires_in: 300,
+        });
+        photoSignedUrl = signed?.signed_url || null;
+      } catch {
+        // If we can't create a signed URL, the photo_uri is invalid
+        return Response.json({ error: 'Photo could not be validated' }, { status: 400 });
+      }
+    }
+
     // Automated moderation
     let status = 'pending';
     let modNote = '';
     try {
-      const fileUrls = photoUrl ? [photoUrl] : null;
+      const fileUrls = photoSignedUrl ? [photoSignedUrl] : null;
       const prompt =
         'You are a content safety moderator for a golf community app. Decide whether the following player review' +
-        (photoUrl ? ' and attached photo' : '') +
+        (photoSignedUrl ? ' and attached photo' : '') +
         ' is safe to publish to all players. Reject (safe=false) if it contains unsafe, adult, hateful, violent, ' +
         'deceptive, spam, promotional abuse, harassment, personally identifying information, or content unrelated ' +
         'to a real golf venue experience. Otherwise approve (safe=true). Provide a short reason.\n\n' +
@@ -121,7 +153,7 @@ export default async function (req) {
       title: title || null,
       body: text,
       visit_date: visitDate || null,
-      photo_url: photoUrl || null,
+      photo_uri: photoUri || null,
       author_name: authorName,
       status,
       moderation_note: modNote || null,

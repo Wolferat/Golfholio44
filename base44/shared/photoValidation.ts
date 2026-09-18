@@ -2,14 +2,25 @@
 // Photo Validation — Automated official-photo discovery and
 // safety/relevance/quality validation for eligible listings.
 //
-// Sources:
-//   - the listing's confirmed official venue website
-//   - images hosted by that official website (same domain or CDN)
+// Sources (STRICT — no generic website field):
+//   - the listing's confirmed official_website, OR
+//   - the confirmed source_url that passed the full listing
+//     verification contract (only when source_type is an
+//     allowed official/trusted type — never google_places or
+//     google_business_profile)
 //
-// Google Places imagery is NOT used unless the API can establish
-// the image is associated with the exact venue AND the current
-// Google Maps Platform terms permit the intended display. User
-// review photos are NEVER treated as official venue imagery.
+// A generic Google/Places website candidate, directory URL,
+// social URL, inferred URL, or unverified field is NEVER used.
+//
+// CDN images: an image host does NOT need to match the official
+// website host. A CDN image is allowed when it is directly
+// referenced by the already-validated official venue/source
+// page and passes all safety/relevance/quality checks. Known
+// third-party tracker/directory/social/ad/stock hosts are
+// blocked at the URL level.
+//
+// Google Places imagery is NOT used. User review photos are
+// NEVER treated as official venue imagery.
 //
 // Every candidate photo must pass:
 //   - SSRF-hardened URL validation (reuses automatedVerification)
@@ -28,6 +39,42 @@ const MIN_IMAGE_BYTES = 8192; // 8 KB — rejects tiny icons, logos, map tiles
 const MAX_CANDIDATES = 12; // per listing — limits LLM calls
 const MAX_ACCEPTED = 3; // per listing
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|avif|gif)(\?|$)/i;
+
+// source_types that indicate source_url is a confirmed official
+// source (not a generic Google Places or directory listing).
+const ALLOWED_SOURCE_TYPES = new Set([
+  'official_website',
+  'event_website',
+  'trusted_organization',
+  'admin',
+]);
+
+// Known third-party hosts that must never produce official photos.
+// Includes social, directories, Google user content/Places photos,
+// ad networks, stock photo sites, and analytics/trackers.
+const BLOCKED_HOSTS = [
+  // Social
+  'facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'tiktok.com',
+  'linkedin.com', 'pinterest.com', 'reddit.com', 'snapchat.com',
+  // Directories / review sites
+  'yelp.com', 'tripadvisor.com', 'foursquare.com', 'yellowpages.com',
+  'bbb.org', 'opentable.com', 'angieslist.com', 'hotels.com',
+  'booking.com', 'expedia.com', 'airbnb.com',
+  // Google user content / Places photos
+  'google.com', 'googleusercontent.com', 'ggpht.com', 'lh3.googleusercontent.com',
+  'maps.googleapis.com', 'maps.google.com',
+  // Ad networks / trackers
+  'doubleclick.net', 'googleadservices.com', 'googlesyndication.com',
+  'googletagmanager.com', 'googletagservices.com',
+  'adnxs.com', 'criteo.com', 'taboola.com', 'outbrain.com',
+  // Stock photo sites
+  'shutterstock.com', 'gettyimages.com', 'istockphoto.com', 'alamy.com',
+  'pexels.com', 'unsplash.com', 'pixabay.com', 'depositphotos.com',
+  'dreamstime.com', 'stock.adobe.com',
+  // Analytics
+  'google-analytics.com', 'segment.io', 'mixpanel.com', 'amplitude.com',
+  'hotjar.com', 'fullstory.com',
+];
 
 export interface PhotoValidationResult {
   accepted: boolean;
@@ -50,6 +97,52 @@ export interface ListingPhotoDiscoveryResult {
   accepted: PhotoValidationResult[];
   rejected: PhotoValidationResult[];
   fetch_error: string | null;
+}
+
+// ------------------------------------------------------------
+// Select the official source URL for photo discovery.
+// Returns the confirmed official_website, or the confirmed
+// source_url when source_type is an allowed official/trusted
+// type. NEVER returns the generic website field. Returns empty
+// string when no valid official source is available.
+// ------------------------------------------------------------
+export function selectOfficialSource(listing: any): string {
+  if (listing.official_website) {
+    return String(listing.official_website).trim();
+  }
+  if (listing.source_url && ALLOWED_SOURCE_TYPES.has(listing.source_type)) {
+    return String(listing.source_url).trim();
+  }
+  return '';
+}
+
+// ------------------------------------------------------------
+// Check if a URL host is a known third-party tracker, directory,
+// social, ad, stock, or Google Places host. These are blocked
+// at the URL level — they can never produce official photos.
+// ------------------------------------------------------------
+export function isBlockedHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    return BLOCKED_HOSTS.some((b) => host === b || host.endsWith('.' + b));
+  } catch {
+    return true; // invalid URL = blocked
+  }
+}
+
+// ------------------------------------------------------------
+// Validate a review photo URI — must be a private file URI from
+// our controlled storage, never an external URL.
+// ------------------------------------------------------------
+export function isValidReviewPhotoUri(photoUri: string): boolean {
+  if (!photoUri) return true; // empty is valid (no photo)
+  const trimmed = photoUri.trim();
+  // Reject any http/https URL — review photos must come from
+  // controlled UploadPrivateFile storage, not external URLs.
+  if (/^https?:\/\//i.test(trimmed)) return false;
+  // Reject other URL schemes
+  if (/^(ftp|file|javascript|data):/i.test(trimmed)) return false;
+  return true;
 }
 
 // ------------------------------------------------------------
@@ -111,15 +204,18 @@ async function fetchHtmlSafely(
 // ------------------------------------------------------------
 // Extract image URLs from HTML — og:image, img src tags.
 // Resolves relative URLs, deduplicates, filters to image-like
-// extensions or extensionless CDN URLs. Only same-domain or
-// subdomain images are kept (prevents third-party trackers).
+// extensions or extensionless CDN URLs.
+//
+// CDN images ARE allowed: the image host does NOT need to match
+// the official website host. A CDN image (Wix, Squarespace,
+// Cloudflare, CloudFront, etc.) is kept when it is directly
+// referenced by the validated official page.
+//
+// Known third-party tracker/directory/social/ad/stock hosts are
+// blocked at the URL level.
 // ------------------------------------------------------------
 export function extractImageUrls(html: string, baseUrl: string): string[] {
   const urls = new Set<string>();
-  let baseHost = '';
-  try {
-    baseHost = new URL(baseUrl).hostname.replace(/^www\./, '').toLowerCase();
-  } catch {}
 
   const resolve = (u: string): string => {
     try {
@@ -129,13 +225,8 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
     }
   };
 
-  const isSameDomain = (u: string): boolean => {
-    try {
-      const h = new URL(u).hostname.replace(/^www\./, '').toLowerCase();
-      return h === baseHost || h.endsWith('.' + baseHost);
-    } catch {
-      return false;
-    }
+  const isAllowedHost = (u: string): boolean => {
+    return !isBlockedHost(u);
   };
 
   // og:image and twitter:image meta tags (highest quality, preferred)
@@ -143,7 +234,7 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = metaRe.exec(html)) !== null) {
     const u = resolve(m[1]);
-    if (u && isSameDomain(u)) urls.add(u);
+    if (u && isAllowedHost(u)) urls.add(u);
   }
 
   // <img src="...">
@@ -151,13 +242,15 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
   while ((m = imgRe.exec(html)) !== null) {
     const u = resolve(m[1]);
     if (!u) continue;
-    if (!isSameDomain(u)) continue;
-    const parsed = new URL(u);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
-    const path = parsed.pathname.toLowerCase();
-    if (IMAGE_EXTENSIONS.test(path) || !path.match(/\.[a-z0-9]{2,5}$/i)) {
-      urls.add(u);
-    }
+    if (!isAllowedHost(u)) continue;
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
+      const path = parsed.pathname.toLowerCase();
+      if (IMAGE_EXTENSIONS.test(path) || !path.match(/\.[a-z0-9]{2,5}$/i)) {
+        urls.add(u);
+      }
+    } catch {}
   }
 
   return Array.from(urls).slice(0, MAX_CANDIDATES);
@@ -173,6 +266,10 @@ async function preCheckImage(
 ): Promise<{ ok: boolean; reason: string; contentType: string; contentLength: number }> {
   const check = await validatePublicUrl(imageUrl);
   if (!check.valid) return { ok: false, reason: check.reason, contentType: '', contentLength: 0 };
+
+  if (isBlockedHost(imageUrl)) {
+    return { ok: false, reason: 'blocked host (third-party tracker/directory/social/ad/stock)', contentType: '', contentLength: 0 };
+  }
 
   try {
     const response = await fetch(imageUrl, {
@@ -295,8 +392,13 @@ function buildAttribution(sourceUrl: string): string {
 
 // ------------------------------------------------------------
 // Discover photos for a single listing — fetches the official
-// website, extracts candidate image URLs, validates each, and
-// returns accepted + rejected results. Stops after MAX_ACCEPTED.
+// source page, extracts candidate image URLs, validates each,
+// and returns accepted + rejected results. Stops after
+// MAX_ACCEPTED.
+//
+// Source selection: only official_website or confirmed
+// source_url (with allowed source_type). NEVER the generic
+// website field.
 // ------------------------------------------------------------
 export async function discoverPhotosForListing(
   listing: any,
@@ -312,14 +414,14 @@ export async function discoverPhotosForListing(
     fetch_error: null,
   };
 
-  const website = listing.official_website || listing.website || listing.source_url;
-  if (!website) {
-    result.fetch_error = 'no official website URL';
+  const sourceUrl = selectOfficialSource(listing);
+  if (!sourceUrl) {
+    result.fetch_error = 'no confirmed official source URL';
     return result;
   }
-  result.website_used = website;
+  result.website_used = sourceUrl;
 
-  const fetched = await fetchHtmlSafely(website);
+  const fetched = await fetchHtmlSafely(sourceUrl);
   if (!fetched.ok) {
     result.fetch_error = fetched.reason;
     return result;

@@ -15,8 +15,19 @@ import {
 // history entry, saved item, or API request cannot reveal an
 // out-of-radius or unverified record.
 //
-// Now also returns accepted official venue photos from the
-// OfficialPhoto entity (preferred over legacy listing.photos).
+// Returns:
+//   - accepted official venue photos (from OfficialPhoto entity)
+//   - approved player reviews (sanitized, with signed photo URLs)
+//   - the current user's own review (any status, with signed
+//     photo URL + photo_uri for editing)
+//
+// Players never directly query OfficialPhoto or Review entities.
+// All photos and reviews are served through this gated endpoint
+// after the listing passes the shared public-listing policy for
+// the specific authenticated player and location.
+//
+// Signed-out users receive { item: null }.
+// Authenticated out-of-radius users receive { item: null }.
 // ============================================================
 
 export default async function (req) {
@@ -60,7 +71,7 @@ export default async function (req) {
     const ev = evaluatePublicListing(record, centerLat, centerLng);
     if (!ev) return Response.json({ item: null });
 
-    // Fetch accepted official photos from the OfficialPhoto entity
+    // Fetch accepted official photos from the OfficialPhoto entity (admin-only RLS)
     const officialPhotos = await base44.asServiceRole.entities.OfficialPhoto
       .filter({ listing_id: id, validation_status: 'accepted' }, 'display_order', 3)
       .catch(() => []);
@@ -75,6 +86,66 @@ export default async function (req) {
     const heroPhoto = officialPhotoData.length > 0
       ? officialPhotoData[0].url
       : publicPhoto(record);
+
+    // Fetch approved reviews (service role — bypasses RLS)
+    const approvedReviewsRaw = await base44.asServiceRole.entities.Review
+      .filter({ listing_id: id, status: 'approved' }, '-created_date', 50)
+      .catch(() => []);
+
+    // Fetch the current user's own review (any status)
+    const myReviewsRaw = await base44.asServiceRole.entities.Review
+      .filter({ listing_id: id, created_by_id: user.id }, '-created_date', 1)
+      .catch(() => []);
+
+    // Create signed URLs for review photos
+    const createSignedUrl = async (photoUri: string): Promise<string | null> => {
+      if (!photoUri) return null;
+      try {
+        const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({
+          file_uri: photoUri,
+          expires_in: 3600,
+        });
+        return signed?.signed_url || null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Sanitize approved reviews (no photo_uri exposed to other players)
+    const reviews = [];
+    for (const r of approvedReviewsRaw) {
+      const photoUrl = await createSignedUrl(r.photo_uri);
+      reviews.push({
+        id: r.id,
+        rating: r.rating,
+        title: r.title || null,
+        body: r.body,
+        visit_date: r.visit_date || null,
+        author_name: r.author_name || 'Golfer',
+        created_date: r.created_date,
+        photo_url: photoUrl,
+      });
+    }
+
+    // Sanitize the user's own review (includes photo_uri for editing)
+    let myReview = null;
+    if (myReviewsRaw.length > 0) {
+      const r = myReviewsRaw[0];
+      const photoUrl = await createSignedUrl(r.photo_uri);
+      myReview = {
+        id: r.id,
+        rating: r.rating,
+        title: r.title || null,
+        body: r.body,
+        visit_date: r.visit_date || null,
+        author_name: r.author_name || 'Golfer',
+        created_date: r.created_date,
+        status: r.status,
+        moderation_note: r.moderation_note || null,
+        photo_url: photoUrl,
+        photo_uri: r.photo_uri || null,
+      };
+    }
 
     const startsAt = record.starts_at || null;
     const endsAt = record.ends_at || null;
@@ -108,6 +179,8 @@ export default async function (req) {
         coords: true,
         is_professional_tournament: record.is_professional_tournament || false,
         official_registration_url: record.official_registration_url || null,
+        reviews,
+        my_review: myReview,
       },
     });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX, Table2, BadgeCheck, Globe, FileQuestion } from 'lucide-react';
-import { getPendingPhotos, reviewPhoto, getFlaggedListings, getPendingListings, reviewListingAction, getAuditReport } from '@/lib/golfData';
+import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX, Table2, BadgeCheck, Globe, FileQuestion, BarChart3, Camera, MessageSquareWarning } from 'lucide-react';
+import { getPendingPhotos, reviewPhoto, getFlaggedListings, getPendingListings, reviewListingAction, getAuditReport, getAdminMetrics } from '@/lib/golfData';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -13,6 +13,7 @@ export default function Admin() {
   const [flagged, setFlagged] = useState([]);
   const [pending, setPending] = useState([]);
   const [audit, setAudit] = useState(null);
+  const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(false);
 
@@ -31,6 +32,9 @@ export default function Admin() {
       } else if (tab === 'listings') {
         const f = await getFlaggedListings();
         setFlagged(f);
+      } else if (tab === 'metrics') {
+        const m = await getAdminMetrics();
+        setMetrics(m);
       }
     } catch {}
     setLoading(false);
@@ -62,6 +66,7 @@ export default function Admin() {
     { key: 'auditTable', label: 'Audit Table', count: null },
     { key: 'photos', label: 'Photos', count: photos.length },
     { key: 'listings', label: 'Flagged', count: flagged.length },
+    { key: 'metrics', label: 'Metrics', count: null },
   ];
 
   return (
@@ -150,6 +155,8 @@ export default function Admin() {
             ))}
           </div>
         )
+      ) : tab === 'metrics' ? (
+        <MetricsView metrics={metrics} />
       ) : (
         flagged.length === 0 ? (
           <EmptyState icon={ShieldCheck} title="No flagged listings" subtitle="Everything looks clean." />
@@ -289,6 +296,83 @@ function EmptyState({ icon: Icon, title, subtitle }) {
       <Icon className="h-8 w-8 mx-auto mb-2 opacity-50" />
       <p className="font-medium text-foreground">{title}</p>
       <p className="text-xs mt-1">{subtitle}</p>
+    </div>
+  );
+}
+
+function MetricsView({ metrics }) {
+  if (!metrics) return <EmptyState icon={BarChart3} title="No metrics data" subtitle="Loading metrics…" />;
+  const { photos, reviews, reports } = metrics;
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+          <Camera className="h-4 w-4" /> Photo Workflow
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          <StatCard label="Accepted" value={photos.counts.accepted} icon={Check} />
+          <StatCard label="Rejected" value={photos.counts.rejected} icon={X} danger />
+          <StatCard label="Retrying" value={photos.counts.retrying} icon={ImageUp} />
+          <StatCard label="Failed" value={photos.counts.failed} icon={ImageOff} danger />
+        </div>
+      </div>
+
+      {photos.recent_rejections.length > 0 && (
+        <div>
+          <div className="text-sm font-semibold mb-2">Recent Photo Rejections</div>
+          <div className="space-y-1.5">
+            {photos.recent_rejections.map((p) => (
+              <div key={p.id} className="text-xs rounded-lg bg-card border border-border px-3 py-2">
+                <div className="font-medium truncate">{p.listing_name}</div>
+                <div className="text-muted-foreground truncate">{p.source_url}</div>
+                <div className="text-destructive mt-0.5">{p.validation_result}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+          <MessageSquareWarning className="h-4 w-4" /> Review Safety
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <StatCard label="Approved" value={reviews.counts.approved} icon={Check} />
+          <StatCard label="Pending" value={reviews.counts.pending} icon={ClipboardList} />
+          <StatCard label="Rejected" value={reviews.counts.rejected} icon={X} danger />
+        </div>
+      </div>
+
+      {reviews.flagged.length > 0 && (
+        <div>
+          <div className="text-sm font-semibold mb-2">Flagged Reviews</div>
+          <div className="space-y-1.5">
+            {reviews.flagged.map((r) => (
+              <div key={r.id} className="text-xs rounded-lg bg-card border border-border px-3 py-2">
+                <div className="font-medium truncate">{r.listing_name} · {r.rating}★ · {r.status}</div>
+                <div className="text-muted-foreground truncate">{r.moderation_note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+          <Flag className="h-4 w-4" /> Inaccuracy Reports
+        </div>
+        <StatCard label="Pending reports" value={reports.pending_count} icon={Flag} danger={reports.pending_count > 0} />
+        {reports.sample.length > 0 && (
+          <div className="space-y-1.5 mt-2">
+            {reports.sample.map((r) => (
+              <div key={r.id} className="text-xs rounded-lg bg-card border border-border px-3 py-2">
+                <div className="font-medium truncate">{r.target_type} · {r.reason}</div>
+                {r.details && <div className="text-muted-foreground truncate">{r.details}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

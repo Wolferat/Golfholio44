@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Star, ImagePlus, X, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -15,21 +15,46 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
   const [body, setBody] = useState(review?.body || '');
   const [title, setTitle] = useState(review?.title || '');
   const [visitDate, setVisitDate] = useState(review?.visit_date || '');
-  const [photoUrl, setPhotoUrl] = useState(review?.photo_url || '');
+  const [photoUri, setPhotoUri] = useState(review?.photo_uri || '');
+  const [photoPreview, setPhotoPreview] = useState(review?.photo_url || '');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const blobRef = useRef(null);
 
   const handlePhoto = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: 'Photo too large (max 10 MB)' });
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Only image files are allowed' });
+      return;
+    }
     setUploading(true);
+    // Show local preview immediately
+    if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+    blobRef.current = URL.createObjectURL(file);
+    setPhotoPreview(blobRef.current);
     try {
-      const { file_url } = await base44.integrations.Core.UploadPublicFile({ file });
-      setPhotoUrl(file_url);
+      const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+      setPhotoUri(file_uri);
     } catch {
       toast({ title: 'Photo upload failed' });
+      setPhotoPreview('');
+      setPhotoUri('');
     }
     setUploading(false);
+  };
+
+  const removePhoto = () => {
+    if (blobRef.current) {
+      URL.revokeObjectURL(blobRef.current);
+      blobRef.current = null;
+    }
+    setPhotoUri('');
+    setPhotoPreview('');
   };
 
   const submit = async () => {
@@ -44,13 +69,14 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
         title: title.trim(),
         body: body.trim(),
         visit_date: visitDate,
-        photo_url: photoUrl,
+        photo_uri: photoUri || undefined,
         ...(review?.id ? { review_id: review.id } : {}),
       });
       toast({
         title: review ? 'Review updated' : 'Review submitted',
         description: 'Thanks for sharing your experience.',
       });
+      if (blobRef.current) URL.revokeObjectURL(blobRef.current);
       onDone(res.data.review);
     } catch {
       toast({ title: 'Could not submit review' });
@@ -94,11 +120,11 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
       />
       <p className="text-[11px] text-muted-foreground -mt-2">Visit date (optional)</p>
       <div>
-        {photoUrl ? (
+        {photoPreview ? (
           <div className="relative inline-block">
-            <img src={photoUrl} alt="Review" className="h-24 w-24 rounded-xl object-cover" />
+            <img src={photoPreview} alt="Review" className="h-24 w-24 rounded-xl object-cover" />
             <button
-              onClick={() => setPhotoUrl('')}
+              onClick={removePhoto}
               className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground grid place-items-center"
             >
               <X className="h-3.5 w-3.5" />
@@ -113,7 +139,7 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Your review is checked by automated moderation before it's shown to others. Photos are separate from official venue images.
+        Your review is checked by automated moderation before it's shown to others. Photos are stored securely and are separate from official venue images.
       </p>
       <Button className="w-full h-12" onClick={submit} disabled={saving || uploading}>
         {saving ? 'Saving…' : review ? 'Update review' : 'Post review'}

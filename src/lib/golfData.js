@@ -81,6 +81,11 @@ export async function getAuditReport() {
   return res.data;
 }
 
+export async function getAdminMetrics() {
+  const res = await base44.functions.invoke('getAdminMetrics', {});
+  return res.data;
+}
+
 // ============================================================
 // My Game & Crew — mock data (wired to Supabase in a follow-up)
 // ============================================================

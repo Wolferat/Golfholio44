@@ -21,8 +21,9 @@
       "type": "string",
       "format": "date"
     },
-    "photo_url": {
-      "type": "string"
+    "photo_uri": {
+      "type": "string",
+      "description": "Private file URI from UploadPrivateFile \u2014 never an external URL. Signed URLs are created server-side for display."
     },
     "author_name": {
       "type": "string",
@@ -49,9 +50,6 @@
   "rls": {
     "read": {
       "$or": [
-        {
-          "data.status": "approved"
-        },
         {
           "created_by_id": "{{user.id}}"
         },

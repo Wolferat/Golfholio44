@@ -68,16 +68,9 @@
   ],
   "rls": {
     "read": {
-      "$or": [
-        {
-          "data.validation_status": "accepted"
-        },
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        }
-      ]
+      "user_condition": {
+        "role": "admin"
+      }
     },
     "create": {
       "user_condition": {
