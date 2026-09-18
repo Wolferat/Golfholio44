@@ -162,7 +162,7 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
   if (host.startsWith('::ffff:')) {
     const embedded = host.replace('::ffff:', '');
     const v4embedded = embedded.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (v4embedded) return isPrivateOrReservedHost(embedded[0]);
+    if (v4embedded) return isPrivateOrReservedHost(embedded);
     return true; // unknown mapped form → fail closed
   }
 
@@ -171,7 +171,58 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
 
 // Validates that a URL is http/https and points to a public destination.
 // Returns { valid, reason } — reason is safe to expose (no internal details).
-export function validatePublicUrl(urlStr: string): { valid: boolean; reason: string } {
+// For hostname-based URLs (not IP literals), resolves the hostname via DNS
+// and rejects any address that is loopback, private, link-local, ULA,
+// metadata, or otherwise non-public. This prevents DNS-rebinding attacks
+// where a public-looking hostname resolves to an internal IP.
+export async function validatePublicUrl(urlStr: string): Promise<{ valid: boolean; reason: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return { valid: false, reason: 'invalid URL' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { valid: false, reason: 'non-http protocol' };
+  }
+  const hostname = parsed.hostname;
+  // If it's an IP literal, check directly without DNS.
+  if (isPrivateOrReservedHost(hostname)) {
+    return { valid: false, reason: 'blocked: non-public destination' };
+  }
+  // For hostnames, resolve via DNS and check every resolved address.
+  // This prevents DNS-rebinding: a hostname that looks public but
+  // resolves to a private/internal IP is blocked.
+  try {
+    const addrs = await Deno.resolveDns(hostname, 'A');
+    if (!addrs || addrs.length === 0) {
+      // No A records — try AAAA (IPv6)
+      const addrs6 = await Deno.resolveDns(hostname, 'AAAA');
+      if (!addrs6 || addrs6.length === 0) {
+        return { valid: false, reason: 'blocked: DNS resolution failed' };
+      }
+      for (const a of addrs6) {
+        if (isPrivateOrReservedHost(a)) {
+          return { valid: false, reason: 'blocked: non-public destination' };
+        }
+      }
+    } else {
+      for (const a of addrs) {
+        if (isPrivateOrReservedHost(a)) {
+          return { valid: false, reason: 'blocked: non-public destination' };
+        }
+      }
+    }
+  } catch {
+    // DNS resolution failed — fail closed.
+    return { valid: false, reason: 'blocked: DNS resolution failed' };
+  }
+  return { valid: true, reason: '' };
+}
+
+// Synchronous variant for testing IP-literal URLs without DNS. Does NOT
+// resolve hostnames — use validatePublicUrl for real fetches.
+export function validatePublicUrlSync(urlStr: string): { valid: boolean; reason: string } {
   let parsed: URL;
   try {
     parsed = new URL(urlStr);
@@ -307,7 +358,7 @@ export function evaluateCorroboration(
 // any DNS, redirect, parse, or fetch uncertainty. Safe failure reasons
 // do not expose internal network details.
 export async function corroborateSourceUrl(sourceUrl: string, listing: any): Promise<CorroborationResult> {
-  const initialCheck = validatePublicUrl(sourceUrl);
+  const initialCheck = await validatePublicUrl(sourceUrl);
   if (!initialCheck.valid) {
     return { corroborated: false, reason: initialCheck.reason, evidence: { urlBlocked: true } };
   }
@@ -321,7 +372,7 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
     const MAX_REDIRECTS = 5;
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      const hopCheck = validatePublicUrl(currentUrl);
+      const hopCheck = await validatePublicUrl(currentUrl);
       if (!hopCheck.valid) {
         return { corroborated: false, reason: hopCheck.reason, evidence: { redirectBlocked: true } };
       }

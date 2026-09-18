@@ -4,7 +4,7 @@ import {
   publicPhoto,
 } from '../../shared/publicListingPolicy.ts';
 import { resolveConfirmedSourceUrl } from '../../shared/approvalPolicy.ts';
-import { validateEvidence, decideVerification, evaluateCorroboration, validatePublicUrl } from '../../shared/automatedVerification.ts';
+import { validateEvidence, decideVerification, evaluateCorroboration, validatePublicUrl, validatePublicUrlSync, isPrivateOrReservedHost } from '../../shared/automatedVerification.ts';
 import { buildListingRecord } from '../../shared/googlePlaces.ts';
 
 // Server-side policy test harness. Runs the shared predicate against
@@ -16,6 +16,8 @@ function base(overrides) {
     status: 'approved',
     golf_verified: true,
     golf_verified_by: 'test-verifier',
+    golf_verified_at: '2026-09-17T22:39:39Z',
+    verified_at: '2026-09-17T22:39:39Z',
     verification_tier: 1,
     source_url: 'https://example.com/source',
     type: 'course',
@@ -123,7 +125,7 @@ export default async function (req) {
   for (const id of APPROVED_6) {
     const r = await getById(id);
     if (!r) continue;
-    const synth = { ...r, source_url: r.official_website || r.website || 'https://example.com' };
+    const synth = { ...r, source_url: r.official_website || r.website || 'https://example.com', verified_at: r.verified_at || '2026-09-17T22:39:39Z', golf_verified_by: r.golf_verified_by || 'test-verifier' };
     const evNear = evaluatePublicListing(synth, r.latitude, r.longitude);
     const farLat = typeof r.latitude === 'number' ? r.latitude + 5 : PLAYER.lat + 5;
     const evFar = evaluatePublicListing(synth, farLat, r.longitude);
@@ -237,12 +239,30 @@ export default async function (req) {
   results.push({ case: 'corroboration: event page with wrong date → NOT corroborated', pass: !evaluateCorroboration('Texas Open Charity Tournament - register now for 2025-03-01 event.', 'reg.example.com', 'reg.example.com', eventListing).corroborated });
   results.push({ case: 'corroboration: empty page text → NOT corroborated', pass: !evaluateCorroboration('', 'eaglesnestctx.com', 'eaglesnestctx.com', venueListing).corroborated });
 
-  // --- Provenance tests ---
-  // Every public-eligible listing must have writer or verifier provenance.
-  // An unknown/unattributed writer cannot create a public-eligible listing.
-  results.push({ case: 'provenance: no ingestion_source and no golf_verified_by → hidden', pass: evaluatePublicListing(base({ golf_verified_by: null, ingestion_source: null }), PLAYER.lat, PLAYER.lng) == null });
-  results.push({ case: 'provenance: golf_verified_by set (no ingestion_source) → eligible (grandfathered)', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', ingestion_source: null }), PLAYER.lat, PLAYER.lng) != null });
-  results.push({ case: 'provenance: ingestion_source set (no golf_verified_by) → eligible', pass: evaluatePublicListing(base({ golf_verified_by: null, ingestion_source: 'google_places' }), PLAYER.lat, PLAYER.lng) != null });
+  // --- Verification provenance tests ---
+  // Import provenance (ingestion_source) describes where a record came
+  // from; it does NOT make a listing player-visible and does NOT count as
+  // verification proof. Public eligibility requires a COMPLETE verification
+  // record: verifier identity + timestamp + valid source_url + golf_verified.
+  // A record with only ingestion_source — even if every other field is
+  // populated — must remain hidden.
+
+  // A record with only ingestion_source (no verification fields) → hidden.
+  results.push({ case: 'verification: only ingestion_source, no verification → hidden', pass: evaluatePublicListing(base({ golf_verified_by: null, verified_by: null, verified_at: null, golf_verified_at: null, ingestion_source: 'google_places' }), PLAYER.lat, PLAYER.lng) == null });
+  // A record with ingestion_source + all listing fields but no verification → hidden.
+  results.push({ case: 'verification: fully populated import, no verification → hidden', pass: evaluatePublicListing(base({ golf_verified_by: null, verified_by: null, verified_at: null, golf_verified_at: null, ingestion_source: 'google_places', ingestion_job_id: 'seedShermanListings', source_urls_considered: 'https://test.example.com', phone: '555-1234', address: '123 Main St' }), PLAYER.lat, PLAYER.lng) == null });
+  // golf_verified_by alone, no timestamp, no source → hidden.
+  results.push({ case: 'verification: golf_verified_by alone, no timestamp/source → hidden', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', verified_by: null, verified_at: null, golf_verified_at: null, source_url: '' }), PLAYER.lat, PLAYER.lng) == null });
+  // golf_verified_by + timestamp, but no valid source → hidden.
+  results.push({ case: 'verification: golf_verified_by + timestamp, no source → hidden', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', verified_by: null, verified_at: null, golf_verified_at: '2026-09-17T22:39:39Z', source_url: '' }), PLAYER.lat, PLAYER.lng) == null });
+  // golf_verified_by + valid source, but no timestamp → hidden.
+  results.push({ case: 'verification: golf_verified_by + source, no timestamp → hidden', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', verified_by: null, verified_at: null, golf_verified_at: null, source_url: 'https://example.com' }), PLAYER.lat, PLAYER.lng) == null });
+  // Complete verification (verifier + timestamp + source) → eligible.
+  results.push({ case: 'verification: complete (verifier + timestamp + source) → eligible', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', verified_at: '2026-09-17T22:39:39Z', source_url: 'https://example.com' }), PLAYER.lat, PLAYER.lng) != null });
+  // Complete verification via verified_by/verified_at (legacy path) → eligible.
+  results.push({ case: 'verification: complete via verified_by/at → eligible', pass: evaluatePublicListing(base({ golf_verified_by: null, verified_by: 'admin', verified_at: '2026-09-17T22:39:39Z', source_url: 'https://example.com' }), PLAYER.lat, PLAYER.lng) != null });
+  // Complete verification + ingestion_source → still eligible (ingestion doesn't break it).
+  results.push({ case: 'verification: complete + ingestion_source → eligible', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', verified_at: '2026-09-17T22:39:39Z', source_url: 'https://example.com', ingestion_source: 'google_places' }), PLAYER.lat, PLAYER.lng) != null });
 
   // --- New import tests ---
   // Every newly imported listing begins as pending and hidden.
@@ -259,19 +279,41 @@ export default async function (req) {
   // Reject localhost, loopback, private, link-local, metadata, and
   // internal network addresses. Only public http/https destinations
   // are permitted. Fail closed on any uncertainty.
-  results.push({ case: 'ssrf: localhost blocked', pass: !validatePublicUrl('http://localhost/test').valid });
-  results.push({ case: 'ssrf: 127.0.0.1 loopback blocked', pass: !validatePublicUrl('http://127.0.0.1/test').valid });
-  results.push({ case: 'ssrf: 10.x private blocked', pass: !validatePublicUrl('http://10.0.0.1/test').valid });
-  results.push({ case: 'ssrf: 192.168.x private blocked', pass: !validatePublicUrl('http://192.168.1.1/test').valid });
-  results.push({ case: 'ssrf: 172.16.x private blocked', pass: !validatePublicUrl('http://172.16.0.1/test').valid });
-  results.push({ case: 'ssrf: 169.254.169.254 metadata blocked', pass: !validatePublicUrl('http://169.254.169.254/latest/meta-data').valid });
-  results.push({ case: 'ssrf: 0.0.0.0 blocked', pass: !validatePublicUrl('http://0.0.0.0/test').valid });
-  results.push({ case: 'ssrf: ::1 IPv6 loopback blocked', pass: !validatePublicUrl('http://[::1]/test').valid });
-  results.push({ case: 'ssrf: fe80:: IPv6 link-local blocked', pass: !validatePublicUrl('http://[fe80::1]/test').valid });
-  results.push({ case: 'ssrf: fc00:: IPv6 ULA blocked', pass: !validatePublicUrl('http://[fc00::1]/test').valid });
-  results.push({ case: 'ssrf: public URL allowed', pass: validatePublicUrl('https://example.com/test').valid });
-  results.push({ case: 'ssrf: ftp protocol blocked', pass: !validatePublicUrl('ftp://example.com/test').valid });
-  results.push({ case: 'ssrf: javascript protocol blocked', pass: !validatePublicUrl('javascript:alert(1)').valid });
+  results.push({ case: 'ssrf: localhost blocked', pass: !validatePublicUrlSync('http://localhost/test').valid });
+  results.push({ case: 'ssrf: 127.0.0.1 loopback blocked', pass: !validatePublicUrlSync('http://127.0.0.1/test').valid });
+  results.push({ case: 'ssrf: 10.x private blocked', pass: !validatePublicUrlSync('http://10.0.0.1/test').valid });
+  results.push({ case: 'ssrf: 192.168.x private blocked', pass: !validatePublicUrlSync('http://192.168.1.1/test').valid });
+  results.push({ case: 'ssrf: 172.16.x private blocked', pass: !validatePublicUrlSync('http://172.16.0.1/test').valid });
+  results.push({ case: 'ssrf: 169.254.169.254 metadata blocked', pass: !validatePublicUrlSync('http://169.254.169.254/latest/meta-data').valid });
+  results.push({ case: 'ssrf: 0.0.0.0 blocked', pass: !validatePublicUrlSync('http://0.0.0.0/test').valid });
+  results.push({ case: 'ssrf: ::1 IPv6 loopback blocked', pass: !validatePublicUrlSync('http://[::1]/test').valid });
+  results.push({ case: 'ssrf: fe80:: IPv6 link-local blocked', pass: !validatePublicUrlSync('http://[fe80::1]/test').valid });
+  results.push({ case: 'ssrf: fc00:: IPv6 ULA blocked', pass: !validatePublicUrlSync('http://[fc00::1]/test').valid });
+  results.push({ case: 'ssrf: public URL allowed', pass: validatePublicUrlSync('https://example.com/test').valid });
+  results.push({ case: 'ssrf: ftp protocol blocked', pass: !validatePublicUrlSync('ftp://example.com/test').valid });
+  results.push({ case: 'ssrf: javascript protocol blocked', pass: !validatePublicUrlSync('javascript:alert(1)').valid });
+
+  // --- DNS-rebinding / hostname resolution SSRF tests ---
+  // A hostname that looks public but resolves to a private/internal IP
+  // must be blocked. These tests verify the IP-check logic that runs
+  // after DNS resolution in validatePublicUrl.
+  results.push({ case: 'ssrf-dns: hostname resolving to 127.0.0.1 → blocked', pass: isPrivateOrReservedHost('127.0.0.1') });
+  results.push({ case: 'ssrf-dns: hostname resolving to 10.0.0.1 → blocked', pass: isPrivateOrReservedHost('10.0.0.1') });
+  results.push({ case: 'ssrf-dns: hostname resolving to 169.254.169.254 → blocked', pass: isPrivateOrReservedHost('169.254.169.254') });
+  results.push({ case: 'ssrf-dns: hostname resolving to 192.168.1.1 → blocked', pass: isPrivateOrReservedHost('192.168.1.1') });
+  results.push({ case: 'ssrf-dns: hostname resolving to 172.16.0.1 → blocked', pass: isPrivateOrReservedHost('172.16.0.1') });
+  results.push({ case: 'ssrf-dns: hostname resolving to ::1 → blocked', pass: isPrivateOrReservedHost('::1') });
+  results.push({ case: 'ssrf-dns: hostname resolving to fe80::1 → blocked', pass: isPrivateOrReservedHost('fe80::1') });
+  results.push({ case: 'ssrf-dns: hostname resolving to fc00::1 → blocked', pass: isPrivateOrReservedHost('fc00::1') });
+  results.push({ case: 'ssrf-dns: public IP 93.184.216.34 → allowed', pass: !isPrivateOrReservedHost('93.184.216.34') });
+  results.push({ case: 'ssrf-dns: IPv4-mapped ::ffff:127.0.0.1 → blocked', pass: isPrivateOrReservedHost('::ffff:127.0.0.1') });
+  results.push({ case: 'ssrf-dns: IPv4-mapped ::ffff:93.184.216.34 → allowed', pass: !isPrivateOrReservedHost('::ffff:93.184.216.34') });
+  // Simulate DNS-rebinding: validatePublicUrlSync checks the hostname
+  // literal; the async validatePublicUrl resolves it first. A hostname
+  // like "internal.attacker.com" would be allowed by the sync check but
+  // blocked by the async check after DNS resolution returns a private IP.
+  // We test the resolved-IP check directly (the core of the protection).
+  results.push({ case: 'ssrf-dns: redirect-to-private hostname resolved IP → blocked', pass: isPrivateOrReservedHost('10.0.0.5') });
 
   const passed = results.filter((r) => r.pass).length;
   return Response.json({

@@ -102,10 +102,27 @@ export function checkPublicListing(record, playerLat, playerLng) {
   add('status_approved', record.status === 'approved', `status=${record.status}`);
   // 5. golf_verified === true
   add('golf_verified', record.golf_verified === true, 'golf_verified is not true');
-  // 5b. provenance: every public listing must have writer or verifier provenance.
-  //     ingestion_source (writer) OR golf_verified_by (verifier) must be non-empty.
-  //     An unknown/unattributed writer cannot create a public-eligible listing.
-  add('has_provenance', !!(record.ingestion_source || record.golf_verified_by), 'no provenance: missing ingestion_source and golf_verified_by');
+  // 5b. verification provenance — a COMPLETE verification record, not just
+  //     a name. Import provenance (ingestion_source, ingestion_job_id,
+  //     source_urls_considered) describes where an imported record came
+  //     from; it does NOT make a listing player-visible and does NOT count
+  //     as verification proof. Public eligibility requires separate
+  //     verification provenance created only after the full automated
+  //     verification contract succeeds (or a complete legacy/manual
+  //     verification record with a confirmed source and audit timestamp).
+  //
+  //     Required verification fields:
+  //       - verified_by or golf_verified_by (verifier identity)
+  //       - verified_at or golf_verified_at (verification timestamp)
+  //       - source_url (valid, confirmed official source)
+  //     golf_verified_by alone is NOT enough unless accompanied by a
+  //     timestamp and a valid source URL. A record with only
+  //     ingestion_source — even if every other listing field is
+  //     populated — must remain hidden.
+  const hasVerifier = !!(record.verified_by || record.golf_verified_by);
+  const hasTimestamp = !!(record.verified_at || record.golf_verified_at);
+  const hasValidSource = isTrustedSourceUrl(record.source_url);
+  add('verification_provenance', hasVerifier && hasTimestamp && hasValidSource, 'incomplete verification provenance: requires verifier + timestamp + valid source_url');
   // 6. verification_tier is exactly 1, 2, 3, or 4
   const tier = record.verification_tier;
   add(
