@@ -1,0 +1,48 @@
+{
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "automated_listing_verification",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "verify": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "verifyListings",
+            "args": {
+              "dry_run": false,
+              "limit": 25
+            }
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Verify listings",
+            "description": "Classify, verify source, reject non-golf, expire events"
+          }
+        }
+      }
+    ]
+  },
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "0 */6 * * *",
+      "one_time_date": null,
+      "timezone": "America/Chicago",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "description": "Runs every 6 hours: classifies pending/unverified listings for golf relevance via LLM, verifies official source URLs, rejects non-golf/duplicates, expires ended events, and keeps weakly-sourced records pending. Created deactivated \u2014 activate on Trent's authorization.",
+  "name": "Automated Listing Verification"
+}

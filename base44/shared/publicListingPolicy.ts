@@ -53,6 +53,28 @@ function isValidUrl(u) {
   }
 }
 
+// A trusted source URL must be http/https AND must NOT be a generic
+// Google Maps, directory, social, or aggregator URL. Only an official
+// venue/event site or approved authoritative source qualifies.
+const UNTRUSTED_HOSTS = [
+  'maps.google.com', 'google.com/maps', 'goo.gl', 'google.com/local',
+  'yelp.com', 'tripadvisor.com', 'facebook.com', 'fb.com', 'm.facebook.com',
+  'instagram.com', 'tiktok.com', 'linkedin.com', 'twitter.com', 'x.com',
+  'youtube.com', 'wikipedia.org', 'foursquare.com', 'yellowpages.com',
+  'mapquest.com', 'bing.com/maps', 'apple.com/maps', 'superpages.com',
+  'business.google.com', 'plus.google.com',
+];
+
+function isTrustedSourceUrl(u) {
+  if (!isValidUrl(u)) return false;
+  try {
+    const host = new URL(u).hostname.replace(/^www\./, '').toLowerCase();
+    return !UNTRUSTED_HOSTS.some((b) => host === b || host.endsWith('.' + b) || host.includes(b));
+  } catch {
+    return false;
+  }
+}
+
 function isNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -88,7 +110,7 @@ export function checkPublicListing(record, playerLat, playerLng) {
     `verification_tier=${tier}`
   );
   // 7. source_url is a valid https/http URL
-  add('source_url_valid', isValidUrl(record.source_url), 'source_url missing or not http/https');
+  add('source_url_valid', isTrustedSourceUrl(record.source_url), 'source_url missing, not http/https, or untrusted (Google Maps/directory/social)');
   // 8. type is one of the allowed values
   add('type_allowed', ALLOWED_TYPES.has(record.type), `type=${record.type}`);
   // 9. valid numeric latitude and longitude
