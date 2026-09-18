@@ -137,7 +137,7 @@ function getDomain(url) {
   }
 }
 
-export function buildListingRecord(det, type, placeId, centerLat, centerLng) {
+export function buildListingRecord(det, type, placeId, centerLat, centerLng, jobId = 'enrichAndCache') {
   const city = component(det.address_components, 'locality') || component(det.address_components, 'postal_town') || '';
   const state = component(det.address_components, 'administrative_area_level_1') || '';
   const lat = det.geometry?.location?.lat ?? null;
@@ -163,6 +163,9 @@ export function buildListingRecord(det, type, placeId, centerLat, centerLng) {
     status: 'pending',
     source_url: placeId ? `https://www.google.com/maps/place/?q=place_id:${placeId}` : '',
     source_type: 'google_places',
+    ingestion_source: 'google_places',
+    ingestion_job_id: jobId,
+    source_urls_considered: det.website || '',
     verification_tier: verificationTier,
     verification_notes: 'Auto-discovered via Google Places — pending admin review',
     verified_at: null,
@@ -234,7 +237,7 @@ export async function collectAreaCandidates(key, lat, lng, radiusM) {
   return { seen, counts };
 }
 
-export async function enrichAndCache(base44, key, seen, centerLat, centerLng, cap) {
+export async function enrichAndCache(base44, key, seen, centerLat, centerLng, cap, jobId = 'enrichAndCache') {
   const existing = await base44.asServiceRole.entities.Listing.filter({});
   const existingPlaceIds = new Set((existing || []).map((l) => l.place_id).filter(Boolean));
 
@@ -259,7 +262,7 @@ export async function enrichAndCache(base44, key, seen, centerLat, centerLng, ca
     const golfCheck = isGolfRelated(det);
     if (!golfCheck.isGolf) { rejected++; continue; }
 
-    const rec = buildListingRecord(det, c.type, c.placeId, centerLat, centerLng);
+    const rec = buildListingRecord(det, c.type, c.placeId, centerLat, centerLng, jobId);
 
     const dupCheck = isDuplicate(rec, existing);
     if (dupCheck.isDup) { duplicates++; continue; }

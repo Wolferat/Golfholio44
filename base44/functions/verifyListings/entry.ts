@@ -125,6 +125,9 @@ export default async function (req) {
               verification_notes: 'auto-expired: event ended',
               verified_at: now,
               verified_by: user.id,
+              ingestion_source: 'automated_verification',
+              ingestion_job_id: 'verifyListings',
+              source_urls_considered: candidateSourceUrl || '',
             });
           }
           changes.push({ id: r.id, name: r.name, action: 'expired', reason: 'event ended' });
@@ -136,6 +139,9 @@ export default async function (req) {
               verification_notes: 'auto-rejected: ' + decision.reasons.join('; '),
               verified_at: now,
               verified_by: user.id,
+              ingestion_source: 'automated_verification',
+              ingestion_job_id: 'verifyListings',
+              source_urls_considered: candidateSourceUrl || '',
             });
           }
           changes.push({ id: r.id, name: r.name, action: 'rejected', reason: decision.reasons.join('; ') });
@@ -145,6 +151,9 @@ export default async function (req) {
             await base44.asServiceRole.entities.Listing.update(r.id, {
               verification_tier: decision.tier || null,
               verification_notes: 'pending: ' + decision.reasons.join('; '),
+              ingestion_source: 'automated_verification',
+              ingestion_job_id: 'verifyListings',
+              source_urls_considered: candidateSourceUrl || '',
             });
           }
           changes.push({
@@ -169,6 +178,9 @@ export default async function (req) {
               verified_at: now,
               verified_by: user.id,
               verification_notes: 'auto-verified: ' + decision.reasons.join('; '),
+              ingestion_source: 'automated_verification',
+              ingestion_job_id: 'verifyListings',
+              source_urls_considered: candidateSourceUrl,
             });
           }
           changes.push({

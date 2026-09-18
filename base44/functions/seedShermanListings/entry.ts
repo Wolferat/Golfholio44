@@ -29,7 +29,7 @@ export default async function(req) {
     }
 
     const { seen, counts } = await collectAreaCandidates(key, center.lat, center.lng, RADIUS_M);
-    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, CAP);
+    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, CAP, 'seedShermanListings');
     return Response.json({ region: zip || 'Sherman, TX', searches: counts, ...result });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });

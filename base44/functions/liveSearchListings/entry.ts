@@ -46,7 +46,7 @@ export default async function(req) {
       return Response.json({ dry_run: true, searches: counts, ...result });
     }
 
-    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, cap);
+    const result = await enrichAndCache(base44, key, seen, center.lat, center.lng, cap, 'liveSearchListings');
     return Response.json({ dry_run: false, searches: counts, ...result });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });

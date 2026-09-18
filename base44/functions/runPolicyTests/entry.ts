@@ -4,7 +4,8 @@ import {
   publicPhoto,
 } from '../../shared/publicListingPolicy.ts';
 import { resolveConfirmedSourceUrl } from '../../shared/approvalPolicy.ts';
-import { validateEvidence, decideVerification, evaluateCorroboration } from '../../shared/automatedVerification.ts';
+import { validateEvidence, decideVerification, evaluateCorroboration, validatePublicUrl } from '../../shared/automatedVerification.ts';
+import { buildListingRecord } from '../../shared/googlePlaces.ts';
 
 // Server-side policy test harness. Runs the shared predicate against
 // synthetic in-memory records AND actual current database records.
@@ -14,6 +15,7 @@ function base(overrides) {
     name: 'Test Course',
     status: 'approved',
     golf_verified: true,
+    golf_verified_by: 'test-verifier',
     verification_tier: 1,
     source_url: 'https://example.com/source',
     type: 'course',
@@ -234,6 +236,42 @@ export default async function (req) {
   results.push({ case: 'corroboration: official event registration page with date → corroborated', pass: evaluateCorroboration('Register for the Texas Open Charity Tournament on 2026-11-15. Join us for a great day of golf.', 'reg.example.com', 'reg.example.com', eventListing).corroborated });
   results.push({ case: 'corroboration: event page with wrong date → NOT corroborated', pass: !evaluateCorroboration('Texas Open Charity Tournament - register now for 2025-03-01 event.', 'reg.example.com', 'reg.example.com', eventListing).corroborated });
   results.push({ case: 'corroboration: empty page text → NOT corroborated', pass: !evaluateCorroboration('', 'eaglesnestctx.com', 'eaglesnestctx.com', venueListing).corroborated });
+
+  // --- Provenance tests ---
+  // Every public-eligible listing must have writer or verifier provenance.
+  // An unknown/unattributed writer cannot create a public-eligible listing.
+  results.push({ case: 'provenance: no ingestion_source and no golf_verified_by → hidden', pass: evaluatePublicListing(base({ golf_verified_by: null, ingestion_source: null }), PLAYER.lat, PLAYER.lng) == null });
+  results.push({ case: 'provenance: golf_verified_by set (no ingestion_source) → eligible (grandfathered)', pass: evaluatePublicListing(base({ golf_verified_by: 'Trent Wolfe', ingestion_source: null }), PLAYER.lat, PLAYER.lng) != null });
+  results.push({ case: 'provenance: ingestion_source set (no golf_verified_by) → eligible', pass: evaluatePublicListing(base({ golf_verified_by: null, ingestion_source: 'google_places' }), PLAYER.lat, PLAYER.lng) != null });
+
+  // --- New import tests ---
+  // Every newly imported listing begins as pending and hidden.
+  // approved is reserved for records that completed the full evidence contract.
+  const testDet = { name: 'Test Golf Course', formatted_address: '123 Main St, Sherman, TX 75090', formatted_phone_number: '(903) 555-1234', website: 'https://testcourse.example.com', rating: 4.5, geometry: { location: { lat: 33.6, lng: -96.6 } }, address_components: [{ types: ['locality'], long_name: 'Sherman' }, { types: ['administrative_area_level_1'], long_name: 'TX' }] };
+  const importRec = buildListingRecord(testDet, 'course', 'test_place_id_123', 33.6, -96.6, 'seedShermanListings');
+  results.push({ case: 'import: buildListingRecord creates pending', pass: importRec.status === 'pending' });
+  results.push({ case: 'import: buildListingRecord NOT approved', pass: importRec.status !== 'approved' });
+  results.push({ case: 'import: buildListingRecord sets ingestion_source', pass: importRec.ingestion_source === 'google_places' });
+  results.push({ case: 'import: buildListingRecord sets ingestion_job_id', pass: importRec.ingestion_job_id === 'seedShermanListings' });
+  results.push({ case: 'import: pending import → hidden from feed', pass: evaluatePublicListing({ ...importRec, latitude: 33.6, longitude: -96.6 }, PLAYER.lat, PLAYER.lng) == null });
+
+  // --- SSRF / source-page fetch hardening tests ---
+  // Reject localhost, loopback, private, link-local, metadata, and
+  // internal network addresses. Only public http/https destinations
+  // are permitted. Fail closed on any uncertainty.
+  results.push({ case: 'ssrf: localhost blocked', pass: !validatePublicUrl('http://localhost/test').valid });
+  results.push({ case: 'ssrf: 127.0.0.1 loopback blocked', pass: !validatePublicUrl('http://127.0.0.1/test').valid });
+  results.push({ case: 'ssrf: 10.x private blocked', pass: !validatePublicUrl('http://10.0.0.1/test').valid });
+  results.push({ case: 'ssrf: 192.168.x private blocked', pass: !validatePublicUrl('http://192.168.1.1/test').valid });
+  results.push({ case: 'ssrf: 172.16.x private blocked', pass: !validatePublicUrl('http://172.16.0.1/test').valid });
+  results.push({ case: 'ssrf: 169.254.169.254 metadata blocked', pass: !validatePublicUrl('http://169.254.169.254/latest/meta-data').valid });
+  results.push({ case: 'ssrf: 0.0.0.0 blocked', pass: !validatePublicUrl('http://0.0.0.0/test').valid });
+  results.push({ case: 'ssrf: ::1 IPv6 loopback blocked', pass: !validatePublicUrl('http://[::1]/test').valid });
+  results.push({ case: 'ssrf: fe80:: IPv6 link-local blocked', pass: !validatePublicUrl('http://[fe80::1]/test').valid });
+  results.push({ case: 'ssrf: fc00:: IPv6 ULA blocked', pass: !validatePublicUrl('http://[fc00::1]/test').valid });
+  results.push({ case: 'ssrf: public URL allowed', pass: validatePublicUrl('https://example.com/test').valid });
+  results.push({ case: 'ssrf: ftp protocol blocked', pass: !validatePublicUrl('ftp://example.com/test').valid });
+  results.push({ case: 'ssrf: javascript protocol blocked', pass: !validatePublicUrl('javascript:alert(1)').valid });
 
   const passed = results.filter((r) => r.pass).length;
   return Response.json({

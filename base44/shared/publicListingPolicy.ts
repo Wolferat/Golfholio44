@@ -102,6 +102,10 @@ export function checkPublicListing(record, playerLat, playerLng) {
   add('status_approved', record.status === 'approved', `status=${record.status}`);
   // 5. golf_verified === true
   add('golf_verified', record.golf_verified === true, 'golf_verified is not true');
+  // 5b. provenance: every public listing must have writer or verifier provenance.
+  //     ingestion_source (writer) OR golf_verified_by (verifier) must be non-empty.
+  //     An unknown/unattributed writer cannot create a public-eligible listing.
+  add('has_provenance', !!(record.ingestion_source || record.golf_verified_by), 'no provenance: missing ingestion_source and golf_verified_by');
   // 6. verification_tier is exactly 1, 2, 3, or 4
   const tier = record.verification_tier;
   add(

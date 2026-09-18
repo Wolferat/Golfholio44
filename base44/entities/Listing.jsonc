@@ -153,6 +153,15 @@
     },
     "golf_verified_by": {
       "type": "string"
+    },
+    "ingestion_source": {
+      "type": "string"
+    },
+    "ingestion_job_id": {
+      "type": "string"
+    },
+    "source_urls_considered": {
+      "type": "string"
     }
   },
   "required": [

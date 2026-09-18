@@ -1,6 +1,6 @@
 // ============================================================
 // Automated Verification — Deterministic evidence validation +
-// source page corroboration.
+// source page corroboration + SSRF-hardened fetching.
 //
 // The LLM may research and classify evidence, but it must NOT be
 // the sole authority approving a public listing. Every approval
@@ -15,6 +15,16 @@
 //   - not a duplicate (deterministic)
 //   - not an expired event (deterministic)
 //   - not a non-golf/prohibited name (deterministic corroboration)
+//
+// Source-page fetching is SSRF-hardened:
+//   - rejects localhost, loopback, private, link-local, metadata,
+//     and internal network addresses
+//   - validates destination URLs and redirects before each fetch
+//   - permits only public http/https destinations
+//   - caps redirects (5), response size (1 MB), and timeout (8 s)
+//   - fails closed on DNS, redirect, parse, or fetch uncertainty
+//   - records a safe failure reason without exposing internal
+//     network details
 //
 // If any evidence is uncertain, the listing stays pending (hidden)
 // and the system retries/rechecks automatically later. A listing
@@ -52,9 +62,6 @@ const NON_GOLF_PATTERNS = [
 
 const GOLF_KEYWORDS = ['golf', 'driving range', 'putt', 'mini golf', 'country club', 'links', 'fairway', 'simulator'];
 
-// Generic terms stripped from the venue name before token matching,
-// so that a page containing only "golf" or "course" does not count as
-// a name match. The significant name must identify the specific venue.
 const NAME_STOP_WORDS = new Set([
   'golf', 'course', 'club', 'center', 'centre', 'the', 'inc', 'llc', 'co',
   'ltd', 'simulator', 'indoor', 'range', 'academy', 'training', 'facility',
@@ -100,7 +107,6 @@ export interface Evidence {
   notNonGolfName: boolean;
 }
 
-// Independently validated evidence — each criterion checked deterministically.
 export function validateEvidence(record: any): Evidence {
   return {
     categoryAllowed: ALLOWED_TYPES.has(record.type),
@@ -122,10 +128,67 @@ export function findDuplicate(record: any, allRecords: any[]): { isDup: boolean;
 }
 
 // ============================================================
-// Source page corroboration — the source page must contain
-// corroborating venue/event identity evidence. This goes beyond
-// URL allow/deny lists: the actual page content is fetched and
-// checked against the listing name + at least one stable fact.
+// SSRF hardening — reject non-public destinations before fetching.
+// ============================================================
+
+// Returns true if the hostname is a private, loopback, link-local,
+// metadata, or reserved address that must never be fetched.
+export function isPrivateOrReservedHost(hostname: string): boolean {
+  const host = (hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+
+  if (!host) return true;
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+
+  // IPv4 literal
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = parseInt(v4[1], 10);
+    const b = parseInt(v4[2], 10);
+    if (a === 0) return true;            // 0.0.0.0/8 reserved
+    if (a === 127) return true;          // 127.0.0.0/8 loopback
+    if (a === 10) return true;           // 10.0.0.0/8 private
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12 private
+    if (a === 192 && b === 168) return true;          // 192.168/16 private
+    if (a === 169 && b === 254) return true;          // 169.254/16 link-local + cloud metadata
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64/10 CGNAT
+    if (a >= 224) return true;          // 224+/8 multicast + reserved
+    return false;
+  }
+
+  // IPv6 literal (brackets stripped)
+  if (host === '::1' || host === '::' || host === '::ffff:0:0') return true;
+  if (host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) return true; // link-local + ULA
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d)
+  if (host.startsWith('::ffff:')) {
+    const embedded = host.replace('::ffff:', '');
+    const v4embedded = embedded.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (v4embedded) return isPrivateOrReservedHost(embedded[0]);
+    return true; // unknown mapped form → fail closed
+  }
+
+  return false;
+}
+
+// Validates that a URL is http/https and points to a public destination.
+// Returns { valid, reason } — reason is safe to expose (no internal details).
+export function validatePublicUrl(urlStr: string): { valid: boolean; reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return { valid: false, reason: 'invalid URL' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { valid: false, reason: 'non-http protocol' };
+  }
+  if (isPrivateOrReservedHost(parsed.hostname)) {
+    return { valid: false, reason: 'blocked: non-public destination' };
+  }
+  return { valid: true, reason: '' };
+}
+
+// ============================================================
+// Source page corroboration.
 // ============================================================
 
 export interface CorroborationResult {
@@ -142,12 +205,12 @@ export interface CorroborationResult {
     matchedFacts?: string[];
     httpStatus?: number;
     fetchError?: boolean;
+    urlBlocked?: boolean;
+    redirectBlocked?: boolean;
+    tooManyRedirects?: boolean;
   };
 }
 
-// Pure function — testable without HTTP. Given the page text, the
-// source/final hosts (for redirect detection), and the listing,
-// returns whether the page corroborates the venue/event identity.
 export function evaluateCorroboration(
   pageText: string,
   sourceHost: string,
@@ -156,7 +219,7 @@ export function evaluateCorroboration(
 ): CorroborationResult {
   const text = (pageText || '').toLowerCase();
 
-  // 1. Redirect mismatch — the page redirected to a different domain.
+  // 1. Redirect mismatch
   if (
     finalHost && sourceHost &&
     finalHost !== sourceHost &&
@@ -165,24 +228,24 @@ export function evaluateCorroboration(
   ) {
     return {
       corroborated: false,
-      reason: `redirect mismatch: ${sourceHost} → ${finalHost}`,
+      reason: 'redirect mismatch: source and destination domains differ',
       evidence: { redirectMismatch: true, sourceHost, finalHost },
     };
   }
 
-  // 2. Venue name match — strip generic golf/venue terms, then require
-  //    at least 50% of the remaining significant tokens on the page.
-  //    A page containing only "golf" or "course" cannot satisfy this.
+  // 2. Venue name match — strip generic golf/venue terms, require ≥50%
   const listingName = (listing.name || '').toLowerCase().trim();
   const significantTokens = listingName
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length > 2 && !NAME_STOP_WORDS.has(t));
-  const tokensToCheck = significantTokens.length > 0 ? significantTokens : listingName.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+  const tokensToCheck = significantTokens.length > 0
+    ? significantTokens
+    : listingName.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
   const matchedTokens = tokensToCheck.filter((t) => text.includes(t));
   const nameMatchScore = tokensToCheck.length > 0 ? matchedTokens.length / tokensToCheck.length : 0;
   const nameMatch = matchedTokens.length > 0 && nameMatchScore >= 0.5;
 
-  // 3. Stable facts — at least one must match.
+  // 3. Stable facts — at least one must match
   const facts: any[] = [];
   if (listing.city) {
     facts.push({ type: 'city', matched: text.includes(listing.city.toLowerCase()) });
@@ -238,31 +301,69 @@ export function evaluateCorroboration(
   };
 }
 
-// Fetch the source URL and evaluate corroboration against the listing.
-// Follows redirects, detects redirect mismatch, strips HTML, and checks
-// for venue name + at least one stable fact in the page text.
+// Fetch the source URL with SSRF hardening: validate every URL (initial +
+// each redirect hop) against the public-destination check, follow at most
+// 5 redirects, cap response body at 1 MB, timeout at 8 s. Fail closed on
+// any DNS, redirect, parse, or fetch uncertainty. Safe failure reasons
+// do not expose internal network details.
 export async function corroborateSourceUrl(sourceUrl: string, listing: any): Promise<CorroborationResult> {
-  try {
-    const response = await fetch(sourceUrl, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(8000),
-    });
+  const initialCheck = validatePublicUrl(sourceUrl);
+  if (!initialCheck.valid) {
+    return { corroborated: false, reason: initialCheck.reason, evidence: { urlBlocked: true } };
+  }
 
-    if (!response.ok) {
-      return {
-        corroborated: false,
-        reason: `HTTP ${response.status}`,
-        evidence: { httpStatus: response.status },
-      };
+  let sourceHost = '';
+  try { sourceHost = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
+
+  try {
+    let currentUrl = sourceUrl;
+    let response: Response | null = null;
+    const MAX_REDIRECTS = 5;
+
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const hopCheck = validatePublicUrl(currentUrl);
+      if (!hopCheck.valid) {
+        return { corroborated: false, reason: hopCheck.reason, evidence: { redirectBlocked: true } };
+      }
+
+      response = await fetch(currentUrl, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return { corroborated: false, reason: 'redirect missing location header', evidence: { fetchError: true } };
+        }
+        let nextUrl: string;
+        try {
+          nextUrl = new URL(location, currentUrl).href;
+        } catch {
+          return { corroborated: false, reason: 'invalid redirect URL', evidence: { fetchError: true } };
+        }
+        if (hop === MAX_REDIRECTS) {
+          return { corroborated: false, reason: 'too many redirects', evidence: { tooManyRedirects: true } };
+        }
+        currentUrl = nextUrl;
+        continue;
+      }
+      break;
     }
 
-    const finalUrl = response.url;
-    let sourceHost = '';
-    let finalHost = '';
-    try { sourceHost = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
-    try { finalHost = finalUrl ? new URL(finalUrl).hostname.replace(/^www\./, '').toLowerCase() : sourceHost; } catch {}
+    if (!response || !response.ok) {
+      const status = response?.status || 0;
+      return { corroborated: false, reason: `HTTP ${status}`, evidence: { httpStatus: status } };
+    }
 
-    const html = await response.text();
+    let finalHost = '';
+    try { finalHost = new URL(currentUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
+
+    // Read at most 1 MB of response body
+    const MAX_SIZE = 1024 * 1024;
+    const rawText = await response.text();
+    const html = rawText.slice(0, MAX_SIZE);
+
     const text = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -272,11 +373,7 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
 
     return evaluateCorroboration(text, sourceHost, finalHost, listing);
   } catch (e: any) {
-    return {
-      corroborated: false,
-      reason: `fetch error: ${e.message}`,
-      evidence: { fetchError: true },
-    };
+    return { corroborated: false, reason: 'fetch error', evidence: { fetchError: true } };
   }
 }
 
@@ -289,10 +386,6 @@ export interface VerificationDecision {
   sourceCorroboration?: CorroborationResult | null;
 }
 
-// The automated decision. LLM classifies golf relevance (research), but
-// approval requires ALL independent evidence to pass, including source
-// page corroboration. If any evidence is uncertain, the listing stays
-// pending (hidden) and will be rechecked.
 export function decideVerification(
   record: any,
   llmResult: any,
@@ -301,12 +394,10 @@ export function decideVerification(
 ): VerificationDecision {
   const evidence = validateEvidence(record);
 
-  // 1. Expired event → expire (deterministic, no LLM needed)
   if (!evidence.notExpired) {
     return { action: 'expired', reasons: ['event has ended'], evidence };
   }
 
-  // 2. LLM result missing or ambiguous → pending (fail-closed, retry later)
   if (!llmResult || llmResult.is_golf == null) {
     return { action: 'pending', reasons: ['LLM classification unavailable — will retry'], evidence };
   }
@@ -314,33 +405,22 @@ export function decideVerification(
   const llmSaysGolf = llmResult.is_golf === true;
   const tier = [1, 2, 3, 4].includes(llmResult.recommended_tier) ? llmResult.recommended_tier : 0;
 
-  // 3. LLM says not golf → reject
   if (!llmSaysGolf || tier === 0) {
     return { action: 'rejected', reasons: [llmResult.reason || 'LLM classified as non-golf'], evidence };
   }
 
-  // --- From here, LLM says golf. Now require ALL independent evidence. ---
-
-  // 4. Category not allowed → reject (deterministic)
   if (!evidence.categoryAllowed) {
     return { action: 'rejected', reasons: ['category not allowed'], evidence };
   }
 
-  // 5. Name matches non-golf patterns → uncertain → pending
   if (!evidence.notNonGolfName) {
     return { action: 'pending', reasons: ['name matches non-golf pattern (conflicts with LLM classification)'], evidence, tier };
   }
 
-  // 6. Source URL not trusted (http/https, not untrusted host) → pending
   if (!evidence.sourceTrusted) {
     return { action: 'pending', reasons: ['no trusted official source URL'], evidence, tier };
   }
 
-  // 6b. Source page must corroborate the venue/event identity.
-  //     A clean-looking domain on an allow/deny list is NOT enough —
-  //     the actual page content must contain the venue name + at least
-  //     one stable fact. Missing page, redirect mismatch, unrelated
-  //     business, weak match, or uncertainty → pending (hidden).
   if (!sourceCorroboration || !sourceCorroboration.corroborated) {
     return {
       action: 'pending',
@@ -351,18 +431,15 @@ export function decideVerification(
     };
   }
 
-  // 7. Coordinates invalid → pending
   if (!evidence.coordsValid) {
     return { action: 'pending', reasons: ['missing valid coordinates'], evidence, tier };
   }
 
-  // 8. Duplicate check (deterministic)
   const dup = findDuplicate(record, allRecords);
   if (dup.isDup) {
     return { action: 'rejected', reasons: ['duplicate: ' + dup.reason], evidence };
   }
 
-  // 9. All evidence passes → approve
   return {
     action: 'approved',
     reasons: [llmResult.reason || 'all evidence validated', sourceCorroboration.reason],

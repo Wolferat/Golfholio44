@@ -35,6 +35,8 @@ export default async function (req) {
       status: STATUS_MAP[action],
       verified_at: now,
       verified_by: user.id,
+      ingestion_source: 'admin_manual_review',
+      ingestion_job_id: 'reviewListing',
     };
     if (notes) update.verification_notes = notes;
 
@@ -55,6 +57,7 @@ export default async function (req) {
       }
       confirmedSourceUrl = confirmed.sourceUrl;
       update.source_url = confirmedSourceUrl;
+      update.source_urls_considered = confirmedSourceUrl;
 
       // Approval is the admin's confirmation that this is a golf venue.
       update.golf_verified = true;
