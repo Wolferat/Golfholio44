@@ -3,6 +3,7 @@ import {
   evaluatePublicListing,
   publicPhoto,
 } from '../../shared/publicListingPolicy.ts';
+import { resolveConfirmedSourceUrl } from '../../shared/approvalPolicy.ts';
 
 // Server-side policy test harness. Runs the shared predicate against
 // synthetic in-memory records AND actual current database records.
@@ -167,6 +168,26 @@ export default async function (req) {
     if (evaluatePublicListing(r, 70, -150) != null) remotePass++;
   }
   results.push({ case: 'empty/remote area (70,-150) → 0 passing', pass: remotePass === 0, eligible: remotePass });
+
+  // --- Approval workflow: resolveConfirmedSourceUrl ---
+  // A generic `website` is never a trusted source. Only an explicit
+  // http/https source_url, or a confirmed official_website /
+  // official_registration_url, may populate source_url.
+  const appr = (name, record, body, expectOk) => {
+    const r = resolveConfirmedSourceUrl(record, body);
+    results.push({ case: name, pass: r.ok === expectOk, ok: r.ok, reason: r.reason });
+  };
+  appr('approval: only website, no confirmation → FAIL', { website: 'https://x.com' }, {}, false);
+  appr('approval: only website + confirm_official_website → FAIL (no official_website)', { website: 'https://x.com' }, { confirm_official_website: true }, false);
+  appr('approval: explicit http source_url → SUCCEED', { website: 'https://x.com' }, { source_url: 'https://official.example.com' }, true);
+  appr('approval: explicit https source_url → SUCCEED', { website: 'https://x.com' }, { source_url: 'https://official.example.com' }, true);
+  appr('approval: explicit ftp source_url → FAIL', { website: 'https://x.com' }, { source_url: 'ftp://x.com' }, false);
+  appr('approval: explicit invalid source_url → FAIL', { website: 'https://x.com' }, { source_url: 'not a url' }, false);
+  appr('approval: confirm_official_website with valid official_website → SUCCEED', { official_website: 'https://club.example.com', website: 'https://x.com' }, { confirm_official_website: true }, true);
+  appr('approval: official_website present but NOT confirmed → FAIL', { official_website: 'https://club.example.com' }, {}, false);
+  appr('approval: confirm_official_registration_url valid → SUCCEED', { official_registration_url: 'https://reg.example.com' }, { confirm_official_registration_url: true }, true);
+  appr('approval: confirm_official_registration_url but field missing → FAIL', { website: 'https://x.com' }, { confirm_official_registration_url: true }, false);
+  appr('approval: empty record, empty body → FAIL', {}, {}, false);
 
   const passed = results.filter((r) => r.pass).length;
   return Response.json({
