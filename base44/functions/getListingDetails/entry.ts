@@ -8,7 +8,7 @@ import {
 } from '../../shared/publicListingPolicy.ts';
 
 // ============================================================
-// Server-side listing detail endpoint.
+// Server-side listing detail endpoint — hardened.
 //
 // Applies the SAME shared policy before returning any listing
 // by ID. A direct route, shared link, guessed ID, browser
@@ -21,10 +21,11 @@ import {
 //   - the current user's own review (any status, with signed
 //     photo URL + photo_uri for editing)
 //
-// Players never directly query OfficialPhoto or Review entities.
-// All photos and reviews are served through this gated endpoint
-// after the listing passes the shared public-listing policy for
-// the specific authenticated player and location.
+// Defense in depth: signed URLs for review photos are ONLY
+// created when the photo_uri has a matching ReviewPhotoUpload
+// record owned by the review's author. This prevents a photo
+// without an ownership record (e.g., set via direct entity
+// access) from being served.
 //
 // Signed-out users receive { item: null }.
 // Authenticated out-of-radius users receive { item: null }.
@@ -97,12 +98,28 @@ export default async function (req) {
       .filter({ listing_id: id, created_by_id: user.id }, '-created_date', 1)
       .catch(() => []);
 
-    // Create signed URLs for review photos
-    const createSignedUrl = async (photoUri: string): Promise<string | null> => {
-      if (!photoUri) return null;
+    // --- Defense in depth: fetch ReviewPhotoUpload records for this listing ---
+    // A signed URL is only created when the review's photo_uri has a matching
+    // upload record owned by the review's author. This prevents photos
+    // without ownership records (e.g., set via direct entity access) from
+    // being served to other players.
+    const uploadRecords = await base44.asServiceRole.entities.ReviewPhotoUpload
+      .filter({ listing_id: id }, '-created_date', 100)
+      .catch(() => []);
+
+    const uploadMap = new Map();
+    for (const u of uploadRecords) {
+      uploadMap.set(u.file_uri, u.uploaded_by_id);
+    }
+
+    // Create signed URL with ownership verification
+    const createSignedUrl = async (review) => {
+      if (!review.photo_uri) return null;
+      const ownerId = uploadMap.get(review.photo_uri);
+      if (!ownerId || ownerId !== review.created_by_id) return null; // no ownership = no signed URL
       try {
         const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({
-          file_uri: photoUri,
+          file_uri: review.photo_uri,
           expires_in: 3600,
         });
         return signed?.signed_url || null;
@@ -114,7 +131,7 @@ export default async function (req) {
     // Sanitize approved reviews (no photo_uri exposed to other players)
     const reviews = [];
     for (const r of approvedReviewsRaw) {
-      const photoUrl = await createSignedUrl(r.photo_uri);
+      const photoUrl = await createSignedUrl(r);
       reviews.push({
         id: r.id,
         rating: r.rating,
@@ -131,7 +148,7 @@ export default async function (req) {
     let myReview = null;
     if (myReviewsRaw.length > 0) {
       const r = myReviewsRaw[0];
-      const photoUrl = await createSignedUrl(r.photo_uri);
+      const photoUrl = await createSignedUrl(r);
       myReview = {
         id: r.id,
         rating: r.rating,

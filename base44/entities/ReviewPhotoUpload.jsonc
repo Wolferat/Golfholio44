@@ -1,0 +1,42 @@
+{
+  "name": "ReviewPhotoUpload",
+  "type": "object",
+  "properties": {
+    "file_uri": {
+      "type": "string",
+      "description": "Private file URI from UploadPrivateFile \u2014 the review photo this upload tracks."
+    },
+    "uploaded_by_id": {
+      "type": "string",
+      "description": "The user who uploaded this private file. Set explicitly by submitReview (service role) because the service role has no created_by_id."
+    },
+    "listing_id": {
+      "type": "string",
+      "description": "The listing this photo was uploaded for (enables efficient per-listing queries)."
+    }
+  },
+  "required": [
+    "file_uri",
+    "uploaded_by_id"
+  ],
+  "rls": {
+    "read": {
+      "data.uploaded_by_id": "{{user.id}}"
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

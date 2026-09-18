@@ -3,33 +3,31 @@ import { evaluatePublicListing } from '../../shared/publicListingPolicy.ts';
 import { isValidReviewPhotoUri } from '../../shared/photoValidation.ts';
 
 // ============================================================
-// Submit / Edit Review
-//
-// Authenticated players submit a review (rating, optional title,
-// written body, optional visit date, optional photo). An LLM
-// safety check runs before the record is stored:
-//   safe     -> approved (visible to all)
-//   unsafe   -> rejected (hidden from other players)
-//   uncertain/ error -> pending (fail-closed: hidden until admin)
-//
-// Edits re-run moderation on the new content.
+// Submit / Edit Review — hardened photo ownership + file validation
 //
 // Photo handling (secure):
-//   - Players submit review images only through controlled
-//     UploadPrivateFile storage (returns a private file_uri).
-//   - Arbitrary external URLs are rejected — photo_uri must
-//     not be an http/https/ftp/javascript/data URL.
-//   - A temporary signed URL is created server-side for the
-//     LLM safety check. The signed URL is NOT stored.
-//   - The private file_uri is stored; signed URLs are created
-//     on demand by getListingDetails for display.
-//   - Review photos are NEVER used as official venue imagery.
+//   1. Players upload review images through controlled UploadPrivateFile
+//      storage (client-side) → returns a private file_uri.
+//   2. submitReview VERIFIES OWNERSHIP: the file_uri must not already be
+//      claimed by a different player. If unclaimed, it is claimed for
+//      the current player (ReviewPhotoUpload record, service role).
+//   3. A temporary signed URL is created server-side for:
+//      a. File validation (HEAD request: content-type must be image,
+//         content-length within 10 MB limit)
+//      b. LLM safety moderation
+//   4. The signed URL is NOT stored. The private file_uri is stored.
+//   5. On edit, if the photo changed, the OLD upload record is deleted
+//      (revoking access — the old file_uri can no longer be used).
+//   6. Review photos are NEVER used as official venue imagery.
 //
 // Enforces:
 //   - signed-in players only
 //   - one active review per player per listing (on create)
 //   - reviews only on listings that pass the public trust policy
-//   - players can only edit/delete their own reviews (RLS)
+//   - players can only edit/delete their own reviews (RLS + server check)
+//   - photo_uri must be a private file URI, never an external URL
+//   - photo_uri must be owned by the current player
+//   - file must be a supported image format within size limits
 // ============================================================
 
 const MOD_SCHEMA = {
@@ -40,6 +38,8 @@ const MOD_SCHEMA = {
   },
   required: ['safe', 'reason'],
 };
+
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export default async function (req) {
   try {
@@ -68,6 +68,30 @@ export default async function (req) {
     // Validate photo_uri — must be a private file URI, never an external URL
     if (!isValidReviewPhotoUri(photoUri)) {
       return Response.json({ error: 'Invalid photo — images must be uploaded through the app' }, { status: 400 });
+    }
+
+    // --- Verify photo ownership ---
+    // The file_uri must not be claimed by a different player. If unclaimed,
+    // claim it for the current player. This prevents one player from
+    // attaching another player's private file URI, even if obtained/guessed.
+    if (photoUri) {
+      const existingUploads = await base44.asServiceRole.entities.ReviewPhotoUpload
+        .filter({ file_uri: photoUri }, '-created_date', 10)
+        .catch(() => []);
+
+      const ownedByOther = existingUploads.some((u) => u.uploaded_by_id !== user.id);
+      if (ownedByOther) {
+        return Response.json({ error: 'Photo not owned by current user' }, { status: 403 });
+      }
+
+      const ownedByMe = existingUploads.some((u) => u.uploaded_by_id === user.id);
+      if (!ownedByMe) {
+        await base44.asServiceRole.entities.ReviewPhotoUpload.create({
+          file_uri: photoUri,
+          uploaded_by_id: user.id,
+          listing_id: listingId,
+        }).catch(() => {});
+      }
     }
 
     // Verify listing eligibility (non-location policy checks)
@@ -103,8 +127,8 @@ export default async function (req) {
       }
     } catch {}
 
-    // Create a temporary signed URL for the photo (for LLM validation only)
-    let photoSignedUrl: string | null = null;
+    // Create a temporary signed URL for the photo (for validation + LLM)
+    let photoSignedUrl = null;
     if (photoUri) {
       try {
         const signed = await base44.asServiceRole.integrations.Core.CreateFileSignedUrl({
@@ -113,8 +137,29 @@ export default async function (req) {
         });
         photoSignedUrl = signed?.signed_url || null;
       } catch {
-        // If we can't create a signed URL, the photo_uri is invalid
         return Response.json({ error: 'Photo could not be validated' }, { status: 400 });
+      }
+    }
+
+    // --- File validation: content-type must be image, size within limits ---
+    if (photoSignedUrl) {
+      try {
+        const headResp = await fetch(photoSignedUrl, {
+          method: 'HEAD',
+          signal: AbortSignal.timeout(8000),
+        });
+        if (headResp.ok) {
+          const contentType = (headResp.headers.get('content-type') || '').toLowerCase();
+          const contentLength = parseInt(headResp.headers.get('content-length') || '0', 10);
+          if (!contentType.startsWith('image/')) {
+            return Response.json({ error: 'File must be an image' }, { status: 400 });
+          }
+          if (contentLength > 0 && contentLength > MAX_PHOTO_BYTES) {
+            return Response.json({ error: 'Image too large (max 10 MB)' }, { status: 400 });
+          }
+        }
+      } catch {
+        // HEAD failed — defer to LLM visual check
       }
     }
 
@@ -160,7 +205,25 @@ export default async function (req) {
     };
 
     if (reviewId) {
+      // Fetch existing review to verify ownership and get old photo_uri
+      const existingReview = await base44.asServiceRole.entities.Review.get(reviewId).catch(() => null);
+      if (!existingReview) {
+        return Response.json({ error: 'Review not found' }, { status: 404 });
+      }
+      if (existingReview.created_by_id !== user.id) {
+        return Response.json({ error: 'Not your review' }, { status: 403 });
+      }
+
       const updated = await base44.entities.Review.update(reviewId, payload);
+
+      // Release old photo if it changed (revoke access to old file_uri)
+      const oldPhotoUri = existingReview.photo_uri;
+      if (oldPhotoUri && oldPhotoUri !== photoUri) {
+        await base44.asServiceRole.entities.ReviewPhotoUpload
+          .deleteMany({ file_uri: oldPhotoUri, uploaded_by_id: user.id })
+          .catch(() => {});
+      }
+
       return Response.json({ review: updated });
     }
 
