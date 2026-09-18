@@ -70,10 +70,20 @@ export default function Play() {
     .filter((t) => t.status === 'scheduled')
     .sort((a, b) => (a.date + a.time > b.date + b.time ? 1 : -1));
 
-  const myTotals = completed.map((c) => playerTotal(c, c.players?.[0])).filter((n) => n > 0);
-  const rounds = myTotals.length;
-  const avg = rounds ? Math.round(myTotals.reduce((a, b) => a + b, 0) / rounds) : null;
-  const best = rounds ? Math.min(...myTotals) : null;
+  const statFor = (holeCount) => {
+    const totals = completed
+      .filter((c) => c.holes === holeCount)
+      .map((c) => playerTotal(c, c.players?.[0]))
+      .filter((n) => n > 0);
+    if (!totals.length) return null;
+    return {
+      rounds: totals.length,
+      avg: Math.round(totals.reduce((a, b) => a + b, 0) / totals.length),
+      best: Math.min(...totals),
+    };
+  };
+  const stats18 = statFor(18);
+  const stats9 = statFor(9);
 
   return (
     <div>
@@ -89,22 +99,30 @@ export default function Play() {
 
       <PullToRefresh onRefresh={load}>
         <div className="p-4 space-y-5">
-          {/* summary tile */}
-          <div className="glass-card rounded-2xl border border-border p-4">
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-2xl font-extrabold text-primary">{rounds || '—'}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">Rounds</div>
+          {/* summary tiles — 18-hole and 9-hole tracked separately */}
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: '18-hole', stat: stats18 },
+              { label: '9-hole', stat: stats9 },
+            ].map(({ label, stat }) => (
+              <div key={label} className="glass-card rounded-2xl border border-border p-3">
+                <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">{label}</div>
+                <div className="grid grid-cols-3 gap-1 text-center">
+                  <div>
+                    <div className="text-xl font-extrabold text-primary">{stat ? stat.rounds : '—'}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Rounds</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-extrabold">{stat ? stat.avg : '—'}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Avg</div>
+                  </div>
+                  <div>
+                    <div className="text-xl font-extrabold">{stat ? stat.best : '—'}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Best</div>
+                  </div>
+                </div>
               </div>
-              <div className="border-x border-border">
-                <div className="text-2xl font-extrabold">{avg ?? '—'}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">Avg</div>
-              </div>
-              <div>
-                <div className="text-2xl font-extrabold">{best ?? '—'}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">Best</div>
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* two action buttons */}

@@ -28,6 +28,9 @@ export default function ScorecardListItem({ card, onClick }) {
           </span>
         ))}
       </div>
+      {card.notes && (
+        <p className="text-xs text-muted-foreground mt-2.5 line-clamp-2">{card.notes}</p>
+      )}
     </motion.button>
   );
 }

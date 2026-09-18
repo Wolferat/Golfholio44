@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Star, Calendar, Globe, Navigation, Phone, DollarSign, Flag, Heart } from 'lucide-react';
 import GlassHeader from '@/components/golf/GlassHeader';
 import CategoryPlaceholder from '@/components/golf/CategoryPlaceholder';
+import ReviewSection from '@/components/golf/ReviewSection';
 import { getListingById, toggleFavorite } from '@/lib/golfData';
 import { useGolfLocation } from '@/hooks/useGolfLocation';
 import { useAuth } from '@/lib/AuthContext';
@@ -230,8 +231,12 @@ export default function ListingPage() {
           </Button>
         </div>
 
-        <p className="text-xs text-muted-foreground pt-2">
-          Reviews, tee times, and reservations will appear here as venues connect. No availability is shown until verified.
+        <div className="pt-2">
+          <ReviewSection listingId={id} listingName={item.name} />
+        </div>
+
+        <p className="text-xs text-muted-foreground pt-1">
+          Tee times and reservations will appear here as venues connect. No availability is shown until verified.
         </p>
       </div>
     </div>

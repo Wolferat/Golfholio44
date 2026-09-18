@@ -13,6 +13,8 @@ export default function LiveScorecard({ cardId, onBack }) {
   const [card, setCard] = useState(null);
   const [hole, setHole] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -25,6 +27,8 @@ export default function LiveScorecard({ cardId, onBack }) {
     });
     return () => { mounted = false; unsub(); };
   }, [cardId]);
+
+  useEffect(() => { setNotes(card?.notes || ''); }, [card?.id]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-dvh"><div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
@@ -72,10 +76,20 @@ export default function LiveScorecard({ cardId, onBack }) {
     toast({ title: 'Link copied', description: 'Share it so your crew can follow live.' });
   };
   const complete = async () => {
-    await base44.entities.Scorecard.update(cardId, { status: 'completed' });
+    await base44.entities.Scorecard.update(cardId, { status: 'completed', notes: notes || null });
     onBack?.();
   };
   const next = () => setHole((h) => Math.min(h + 1, holes));
+
+  const saveNotes = async () => {
+    if (readOnly) return;
+    setSavingNotes(true);
+    try {
+      await base44.entities.Scorecard.update(cardId, { notes: notes || null });
+      toast({ title: 'Notes saved' });
+    } catch {}
+    setSavingNotes(false);
+  };
 
   return (
     <div className="pb-40">
@@ -157,6 +171,20 @@ export default function LiveScorecard({ cardId, onBack }) {
             );
           })}
         </div>
+      </div>
+
+      {/* round notes */}
+      <div className="px-4 pb-4">
+        <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2 px-1">Round notes</h2>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          onBlur={saveNotes}
+          disabled={readOnly}
+          placeholder={readOnly ? 'No notes saved for this round.' : 'Add notes about this round…'}
+          className="w-full min-h-[80px] resize-none rounded-2xl bg-card border border-border p-3 text-sm disabled:opacity-70 focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        {!readOnly && savingNotes && <p className="text-[11px] text-muted-foreground mt-1">Saving…</p>}
       </div>
 
       {/* sticky bottom action bar */}

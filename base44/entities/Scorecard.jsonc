@@ -39,6 +39,9 @@
     "scores": {
       "type": "object"
     },
+    "notes": {
+      "type": "string"
+    },
     "tournament_id": {
       "type": "string"
     }
