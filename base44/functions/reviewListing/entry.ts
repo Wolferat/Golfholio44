@@ -33,6 +33,18 @@ export default async function(req) {
     };
     if (notes) update.verification_notes = notes;
 
+    // Keep the approval workflow consistent with the public-listing policy
+    // (rule 7: source_url must be a valid https/http URL). On approve, if the
+    // record has no source_url, populate it from the official website fields
+    // so an approved+verified record is not silently blocked from the feed.
+    if (action === 'approve') {
+      const existing = await base44.asServiceRole.entities.Listing.get(listingId).catch(() => null);
+      if (existing && !existing.source_url) {
+        const official = existing.official_website || existing.official_registration_url || existing.website;
+        if (official) update.source_url = official;
+      }
+    }
+
     const updated = await base44.asServiceRole.entities.Listing.update(listingId, update);
     return Response.json({ success: true, listing: updated });
   } catch (error) {

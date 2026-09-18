@@ -41,11 +41,13 @@ function haversineMi(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// Rule 7: source_url must be a valid http/https URL. No other scheme
+// (ftp, data, javascript, file, ...) may satisfy this rule.
 function isValidUrl(u) {
   if (!u || typeof u !== 'string') return false;
   try {
-    new URL(u);
-    return true;
+    const parsed = new URL(u);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
   } catch {
     return false;
   }
@@ -55,25 +57,81 @@ function isNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+// Core, detailed evaluation. Returns a structured result with a
+// pass/fail for every required policy condition and the first
+// failing reason. Used by the audit diagnostic; the simple
+// evaluatePublicListing predicate below derives from this so there
+// is exactly ONE trust gate.
+export function checkPublicListing(record, playerLat, playerLng) {
+  const checks = [];
+  const add = (rule, pass, reason) =>
+    checks.push({ rule, pass: !!pass, reason: pass ? null : reason });
+
+  if (!record) {
+    return {
+      pass: false,
+      distance: null,
+      firstFailingReason: 'no record',
+      checks: [{ rule: 'exists', pass: false, reason: 'no record' }],
+    };
+  }
+
+  // 4. status === "approved"
+  add('status_approved', record.status === 'approved', `status=${record.status}`);
+  // 5. golf_verified === true
+  add('golf_verified', record.golf_verified === true, 'golf_verified is not true');
+  // 6. verification_tier is exactly 1, 2, 3, or 4
+  const tier = record.verification_tier;
+  add(
+    'verification_tier',
+    tier === 1 || tier === 2 || tier === 3 || tier === 4,
+    `verification_tier=${tier}`
+  );
+  // 7. source_url is a valid https/http URL
+  add('source_url_valid', isValidUrl(record.source_url), 'source_url missing or not http/https');
+  // 8. type is one of the allowed values
+  add('type_allowed', ALLOWED_TYPES.has(record.type), `type=${record.type}`);
+  // 9. valid numeric latitude and longitude
+  add(
+    'coords_valid',
+    isNumber(record.latitude) && isNumber(record.longitude),
+    'missing numeric latitude/longitude'
+  );
+  // 2. player must provide GPS or ZIP-derived coordinates
+  add('player_location', isNumber(playerLat) && isNumber(playerLng), 'missing player coordinates');
+
+  // 3. server-calculated distance within 15 miles
+  let distance = null;
+  if (
+    isNumber(record.latitude) &&
+    isNumber(record.longitude) &&
+    isNumber(playerLat) &&
+    isNumber(playerLng)
+  ) {
+    distance = Math.round(haversineMi(playerLat, playerLng, record.latitude, record.longitude) * 10) / 10;
+    add('within_15mi', distance <= RADIUS_MI, `distance=${distance}mi > ${RADIUS_MI}mi`);
+  } else {
+    add('within_15mi', false, 'cannot compute distance (missing coordinates)');
+  }
+
+  // 10. ended events excluded
+  const ended = EVENT_TYPES.has(record.type) && record.ends_at && new Date(record.ends_at) < new Date();
+  add('not_ended', !ended, ended ? 'event has ended' : null);
+
+  const firstFailing = checks.find((c) => !c.pass);
+  return {
+    pass: !firstFailing,
+    distance: firstFailing ? null : distance,
+    firstFailingReason: firstFailing ? firstFailing.reason : null,
+    checks,
+  };
+}
+
 // Returns { distance } when the record is eligible to be shown to a player,
 // or null when it must NOT be shown. Fail closed: any uncertainty → null.
 export function evaluatePublicListing(record, playerLat, playerLng) {
-  if (!record) return null;
-  if (record.status !== 'approved') return null;
-  if (HIDDEN_STATUSES.has(record.status)) return null;
-  if (record.golf_verified !== true) return null;
-  const tier = record.verification_tier;
-  if (tier !== 1 && tier !== 2 && tier !== 3 && tier !== 4) return null;
-  if (!isValidUrl(record.source_url)) return null;
-  if (!ALLOWED_TYPES.has(record.type)) return null;
-  if (!isNumber(record.latitude) || !isNumber(record.longitude)) return null;
-  if (!isNumber(playerLat) || !isNumber(playerLng)) return null;
-  const distance =
-    Math.round(haversineMi(playerLat, playerLng, record.latitude, record.longitude) * 10) / 10;
-  if (distance > RADIUS_MI) return null;
-  if (EVENT_TYPES.has(record.type) && record.ends_at && new Date(record.ends_at) < new Date())
-    return null;
-  return { distance };
+  const result = checkPublicListing(record, playerLat, playerLng);
+  return result.pass ? { distance: result.distance } : null;
 }
 
 export function isPublicGolfholioListing(record, playerLat, playerLng) {
