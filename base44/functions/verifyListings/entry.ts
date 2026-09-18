@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
-import { decideVerification } from '../../shared/automatedVerification.ts';
+import { decideVerification, corroborateSourceUrl } from '../../shared/automatedVerification.ts';
 
 // Automated listing verification.
 //
@@ -10,6 +10,8 @@ import { decideVerification } from '../../shared/automatedVerification.ts';
 //   - category allowed (deterministic)
 //   - source URL official/authoritative (deterministic, NOT LLM)
 //   - source uses valid http/https (deterministic)
+//   - source PAGE corroborates venue/event identity (deterministic
+//     fetch + text match — not just a clean-looking domain)
 //   - coordinates valid (deterministic)
 //   - not a duplicate (deterministic)
 //   - not an expired event (deterministic)
@@ -17,8 +19,8 @@ import { decideVerification } from '../../shared/automatedVerification.ts';
 //
 // If any evidence is uncertain, the listing stays pending (hidden) and
 // the system retries/rechecks automatically later. A listing must NEVER
-// become public based on a name, generic website, Google snippet, or
-// LLM confidence alone.
+// become public based on a name, generic website, Google snippet, URL
+// allow/deny list, or LLM confidence alone.
 //
 // dry_run returns the plan without writing.
 export default async function (req) {
@@ -43,9 +45,7 @@ export default async function (req) {
       records.push(r);
     }
 
-    // Candidates: pending, OR approved-but-unverified. Skip already
-    // fully verified records (status=approved && golf_verified=true
-    // && tier 1-4 && trusted source_url).
+    // Candidates: pending, OR approved-but-unverified.
     const candidates = records
       .filter(
         (r) =>
@@ -106,8 +106,16 @@ export default async function (req) {
         const candidateSourceUrl = r.source_url || r.official_website || '';
         const recordForDecision = { ...r, source_url: candidateSourceUrl };
 
-        // 3. Automated decision: LLM classifies, deterministic evidence validates.
-        const decision = decideVerification(recordForDecision, llm, records);
+        // 3. Corroborate the source URL against the venue identity.
+        //    Fetch the page, check for redirect mismatch, and verify the
+        //    page contains the venue name + at least one stable fact.
+        let sourceCorroboration = null;
+        if (candidateSourceUrl) {
+          sourceCorroboration = await corroborateSourceUrl(candidateSourceUrl, r);
+        }
+
+        // 4. Automated decision: LLM classifies, deterministic evidence validates.
+        const decision = decideVerification(recordForDecision, llm, records, sourceCorroboration);
 
         const now = new Date().toISOString();
         if (decision.action === 'expired') {
@@ -139,7 +147,14 @@ export default async function (req) {
               verification_notes: 'pending: ' + decision.reasons.join('; '),
             });
           }
-          changes.push({ id: r.id, name: r.name, action: 'pending', reason: decision.reasons.join('; '), tier: decision.tier });
+          changes.push({
+            id: r.id, name: r.name, action: 'pending',
+            reason: decision.reasons.join('; '),
+            tier: decision.tier,
+            sourceCorroboration: sourceCorroboration
+              ? { corroborated: sourceCorroboration.corroborated, reason: sourceCorroboration.reason }
+              : null,
+          });
           pendingSource++;
         } else if (decision.action === 'approved') {
           if (!dryRun) {
@@ -156,7 +171,14 @@ export default async function (req) {
               verification_notes: 'auto-verified: ' + decision.reasons.join('; '),
             });
           }
-          changes.push({ id: r.id, name: r.name, action: 'approved', tier: decision.tier, source_url: candidateSourceUrl, reason: decision.reasons.join('; ') });
+          changes.push({
+            id: r.id, name: r.name, action: 'approved',
+            tier: decision.tier, source_url: candidateSourceUrl,
+            reason: decision.reasons.join('; '),
+            sourceCorroboration: sourceCorroboration
+              ? { corroborated: true, reason: sourceCorroboration.reason, evidence: sourceCorroboration.evidence }
+              : null,
+          });
           approved++;
         }
       } catch (e) {

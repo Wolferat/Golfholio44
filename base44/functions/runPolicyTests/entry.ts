@@ -4,7 +4,7 @@ import {
   publicPhoto,
 } from '../../shared/publicListingPolicy.ts';
 import { resolveConfirmedSourceUrl } from '../../shared/approvalPolicy.ts';
-import { validateEvidence, decideVerification } from '../../shared/automatedVerification.ts';
+import { validateEvidence, decideVerification, evaluateCorroboration } from '../../shared/automatedVerification.ts';
 
 // Server-side policy test harness. Runs the shared predicate against
 // synthetic in-memory records AND actual current database records.
@@ -206,15 +206,34 @@ export default async function (req) {
   results.push({ case: 'evidence: expired event', pass: !validateEvidence({ ...evBase, type: 'tournament', ends_at: '2020-01-01T00:00:00Z' }).notExpired });
 
   const llmGolf = { is_golf: true, recommended_tier: 3, reason: 'golf course confirmed' };
-  results.push({ case: 'decision: LLM golf + all evidence → approve', pass: decideVerification(evBase, llmGolf, []).action === 'approved' });
+  const corroborated = { corroborated: true, reason: 'source corroborated', evidence: { nameMatch: true, factMatch: true, matchedFacts: ['city'] } };
+  const notCorroborated = { corroborated: false, reason: 'name not found on page', evidence: { nameMatch: false } };
+  results.push({ case: 'decision: LLM golf + all evidence + corroborated → approve', pass: decideVerification(evBase, llmGolf, [], corroborated).action === 'approved' });
+  results.push({ case: 'decision: LLM golf + all evidence but NOT corroborated → pending', pass: decideVerification(evBase, llmGolf, [], notCorroborated).action === 'pending' });
+  results.push({ case: 'decision: LLM golf + all evidence + no corroboration result → pending', pass: decideVerification(evBase, llmGolf, [], null).action === 'pending' });
   results.push({ case: 'decision: LLM golf but no source → pending', pass: decideVerification({ ...evBase, source_url: '' }, llmGolf, []).action === 'pending' });
   results.push({ case: 'decision: LLM golf but non-golf name → pending', pass: decideVerification({ ...evBase, name: 'St Mary Church' }, llmGolf, []).action === 'pending' });
   results.push({ case: 'decision: LLM not golf → reject', pass: decideVerification(evBase, { is_golf: false, recommended_tier: 0, reason: 'not golf' }, []).action === 'rejected' });
   results.push({ case: 'decision: LLM result missing → pending (fail-closed)', pass: decideVerification(evBase, null, []).action === 'pending' });
-  results.push({ case: 'decision: duplicate → reject', pass: decideVerification(evBase, llmGolf, [{ id: 'other', name: 'Test Golf Course', type: 'course' }]).action === 'rejected' });
+  results.push({ case: 'decision: duplicate (corroborated) → reject', pass: decideVerification(evBase, llmGolf, [{ id: 'other', name: 'Test Golf Course', type: 'course' }], corroborated).action === 'rejected' });
   results.push({ case: 'decision: expired event → expired', pass: decideVerification({ ...evBase, type: 'tournament', ends_at: '2020-01-01T00:00:00Z' }, llmGolf, []).action === 'expired' });
-  results.push({ case: 'decision: LLM golf but bad category → reject', pass: decideVerification({ ...evBase, type: 'lesson' }, llmGolf, []).action === 'rejected' });
-  results.push({ case: 'decision: LLM golf but no coords → pending', pass: decideVerification({ ...evBase, latitude: null, longitude: null }, llmGolf, []).action === 'pending' });
+  results.push({ case: 'decision: LLM golf but bad category → reject', pass: decideVerification({ ...evBase, type: 'lesson' }, llmGolf, [], corroborated).action === 'rejected' });
+  results.push({ case: 'decision: LLM golf but no coords → pending', pass: decideVerification({ ...evBase, latitude: null, longitude: null }, llmGolf, [], corroborated).action === 'pending' });
+
+  // --- Source page corroboration tests ---
+  // The source page must contain the venue name + at least one stable
+  // fact. A clean-looking domain, generic golf term, or URL allow/deny
+  // list is NOT enough.
+  const venueListing = { name: 'Eagles Nest Golf Lounge', city: 'Canton', address: '1457 N Dallas St, Canton, TX 75103', phone: '(903) 340-1681' };
+  results.push({ case: 'corroboration: matching official venue page → corroborated', pass: evaluateCorroboration('Welcome to Eagles Nest Golf Lounge in Canton, Texas. Located at 1457 N Dallas St, Canton, TX 75103. Call (903) 340-1681.', 'eaglesnestctx.com', 'eaglesnestctx.com', venueListing).corroborated });
+  results.push({ case: 'corroboration: unrelated clean-looking domain → NOT corroborated', pass: !evaluateCorroboration('Welcome to Pine Valley Golf Club in Augusta, Georgia. The finest golf experience.', 'pinevalleygolf.com', 'pinevalleygolf.com', venueListing).corroborated });
+  results.push({ case: 'corroboration: golf language but wrong venue/address → NOT corroborated', pass: !evaluateCorroboration('Eagles Nest Golf Lounge - we sell golf equipment at our store in Dallas TX.', 'golfshop.com', 'golfshop.com', venueListing).corroborated });
+  results.push({ case: 'corroboration: redirect to unrelated domain → NOT corroborated', pass: !evaluateCorroboration('Eagles Nest Golf Lounge Canton TX 75103', 'eaglesnestctx.com', 'facebook.com', venueListing).corroborated });
+  results.push({ case: 'corroboration: name match but no stable fact → NOT corroborated', pass: !evaluateCorroboration('Eagles Nest Golf Lounge - a great place to play golf.', 'someblog.com', 'someblog.com', venueListing).corroborated });
+  const eventListing = { name: 'Texas Open Charity Tournament', starts_at: '2026-11-15T09:00:00Z' };
+  results.push({ case: 'corroboration: official event registration page with date → corroborated', pass: evaluateCorroboration('Register for the Texas Open Charity Tournament on 2026-11-15. Join us for a great day of golf.', 'reg.example.com', 'reg.example.com', eventListing).corroborated });
+  results.push({ case: 'corroboration: event page with wrong date → NOT corroborated', pass: !evaluateCorroboration('Texas Open Charity Tournament - register now for 2025-03-01 event.', 'reg.example.com', 'reg.example.com', eventListing).corroborated });
+  results.push({ case: 'corroboration: empty page text → NOT corroborated', pass: !evaluateCorroboration('', 'eaglesnestctx.com', 'eaglesnestctx.com', venueListing).corroborated });
 
   const passed = results.filter((r) => r.pass).length;
   return Response.json({
