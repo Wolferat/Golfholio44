@@ -3,6 +3,7 @@ import { Star, ImagePlus, X, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
@@ -12,6 +13,8 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
   const [rating, setRating] = useState(review?.rating || 0);
   const [hover, setHover] = useState(0);
   const [body, setBody] = useState(review?.body || '');
+  const [title, setTitle] = useState(review?.title || '');
+  const [visitDate, setVisitDate] = useState(review?.visit_date || '');
   const [photoUrl, setPhotoUrl] = useState(review?.photo_url || '');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -38,7 +41,9 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
         listing_id: listingId,
         listing_name: listingName,
         rating,
+        title: title.trim(),
         body: body.trim(),
+        visit_date: visitDate,
         photo_url: photoUrl,
         ...(review?.id ? { review_id: review.id } : {}),
       });
@@ -68,6 +73,12 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
           </motion.button>
         ))}
       </div>
+      <Input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Title (optional)"
+        maxLength={120}
+      />
       <Textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -75,6 +86,13 @@ export default function ReviewForm({ listingId, listingName, review, onDone }) {
         className="min-h-[100px] resize-none"
         maxLength={2000}
       />
+      <Input
+        type="date"
+        value={visitDate}
+        onChange={(e) => setVisitDate(e.target.value)}
+        max={new Date().toISOString().slice(0, 10)}
+      />
+      <p className="text-[11px] text-muted-foreground -mt-2">Visit date (optional)</p>
       <div>
         {photoUrl ? (
           <div className="relative inline-block">

@@ -7,10 +7,18 @@ import {
   EVENT_TYPES,
 } from '../../shared/publicListingPolicy.ts';
 
-// Server-side detail endpoint. Applies the SAME shared policy before
-// returning any listing by ID. A direct route, shared link, guessed ID,
-// browser history entry, saved item, or API request cannot reveal an
+// ============================================================
+// Server-side listing detail endpoint.
+//
+// Applies the SAME shared policy before returning any listing
+// by ID. A direct route, shared link, guessed ID, browser
+// history entry, saved item, or API request cannot reveal an
 // out-of-radius or unverified record.
+//
+// Now also returns accepted official venue photos from the
+// OfficialPhoto entity (preferred over legacy listing.photos).
+// ============================================================
+
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -52,6 +60,22 @@ export default async function (req) {
     const ev = evaluatePublicListing(record, centerLat, centerLng);
     if (!ev) return Response.json({ item: null });
 
+    // Fetch accepted official photos from the OfficialPhoto entity
+    const officialPhotos = await base44.asServiceRole.entities.OfficialPhoto
+      .filter({ listing_id: id, validation_status: 'accepted' }, 'display_order', 3)
+      .catch(() => []);
+
+    const officialPhotoData = officialPhotos.map((p) => ({
+      url: p.photo_url,
+      attribution: p.attribution,
+      source: p.source_provider,
+    }));
+
+    // Prefer OfficialPhoto entity; fall back to legacy publicPhoto(record)
+    const heroPhoto = officialPhotoData.length > 0
+      ? officialPhotoData[0].url
+      : publicPhoto(record);
+
     const startsAt = record.starts_at || null;
     const endsAt = record.ends_at || null;
     const isLive =
@@ -77,7 +101,8 @@ export default async function (req) {
         website: record.official_website || record.website,
         phone: record.phone,
         address: record.address,
-        photo: publicPhoto(record),
+        photo: heroPhoto,
+        official_photos: officialPhotoData,
         rating: record.rating ?? null,
         distance: ev.distance,
         coords: true,

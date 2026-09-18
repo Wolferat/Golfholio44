@@ -1,0 +1,98 @@
+{
+  "name": "OfficialPhoto",
+  "type": "object",
+  "properties": {
+    "listing_id": {
+      "type": "string"
+    },
+    "listing_name": {
+      "type": "string"
+    },
+    "photo_url": {
+      "type": "string"
+    },
+    "source_url": {
+      "type": "string",
+      "description": "The page URL where this photo was discovered"
+    },
+    "source_provider": {
+      "type": "string",
+      "enum": [
+        "official_website",
+        "google_places"
+      ],
+      "default": "official_website"
+    },
+    "attribution": {
+      "type": "string",
+      "description": "Required attribution text for the photo source"
+    },
+    "validation_status": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "rejected",
+        "retrying",
+        "failed"
+      ],
+      "default": "retrying"
+    },
+    "validation_result": {
+      "type": "string",
+      "description": "Machine-readable validation outcome reason"
+    },
+    "validation_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "retry_count": {
+      "type": "number",
+      "default": 0
+    },
+    "next_retry_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "is_cover": {
+      "type": "boolean",
+      "default": false
+    },
+    "display_order": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "listing_id",
+    "photo_url"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.validation_status": "accepted"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "RoundLog",
+  "type": "object",
+  "properties": {
+    "listing_id": {
+      "type": "string"
+    },
+    "listing_name": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "holes": {
+      "type": "number",
+      "enum": [
+        9,
+        18
+      ],
+      "default": 18
+    },
+    "score": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "format": {
+      "type": "string",
+      "description": "Optional course/format details (e.g. stroke play, scramble)"
+    }
+  },
+  "required": [
+    "listing_id",
+    "date",
+    "holes",
+    "score"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

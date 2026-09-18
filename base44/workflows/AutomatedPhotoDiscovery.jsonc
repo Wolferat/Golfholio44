@@ -1,0 +1,48 @@
+{
+  "name": "Automated Photo Discovery",
+  "description": "Runs every 6 hours: discovers and validates official venue photos for eligible listings missing photos or needing a safe retry. Fetches each listing's official website, extracts candidate images, validates each through SSRF + HTTP pre-check + LLM multi-signal safety/relevance/quality analysis, and stores up to 3 accepted photos per listing. Created deactivated \u2014 activate on Trent's authorization.",
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "0 */6 * * *",
+      "one_time_date": null,
+      "timezone": "America/Chicago",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "automated_photo_discovery",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "discover": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "discoverOfficialPhotos",
+            "args": {
+              "dry_run": false,
+              "limit": 10
+            }
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Discover official photos",
+            "description": "Fetch official websites, validate candidate images, store accepted photos"
+          }
+        }
+      }
+    ]
+  }
+}

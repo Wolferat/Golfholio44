@@ -11,11 +11,22 @@
     "rating": {
       "type": "number"
     },
+    "title": {
+      "type": "string"
+    },
     "body": {
       "type": "string"
     },
+    "visit_date": {
+      "type": "string",
+      "format": "date"
+    },
     "photo_url": {
       "type": "string"
+    },
+    "author_name": {
+      "type": "string",
+      "description": "Player display name at time of review"
     },
     "status": {
       "type": "string",

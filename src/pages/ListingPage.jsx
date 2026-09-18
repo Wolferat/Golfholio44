@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Star, Calendar, Globe, Navigation, Phone, DollarSign, Flag, Heart } from 'lucide-react';
 import GlassHeader from '@/components/golf/GlassHeader';
-import CategoryPlaceholder from '@/components/golf/CategoryPlaceholder';
+import OfficialPhotoGallery from '@/components/golf/OfficialPhotoGallery';
+import VenueRounds from '@/components/golf/VenueRounds';
 import ReviewSection from '@/components/golf/ReviewSection';
 import { getListingById, toggleFavorite } from '@/lib/golfData';
 import { useGolfLocation } from '@/hooks/useGolfLocation';
@@ -147,17 +148,11 @@ export default function ListingPage() {
         </div>
       </GlassHeader>
 
-      <div className="relative h-[280px] overflow-hidden">
-        {item.photo ? (
-          <img src={item.photo} alt={item.name} className="absolute inset-0 h-full w-full object-cover" />
-        ) : (
-          <CategoryPlaceholder className="absolute inset-0 h-full w-full" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-        <span className="absolute top-3 left-3 rounded-full glass border border-border/40 px-3 py-1 text-xs font-semibold">
-          {TYPE_LABEL[item.type] || item.type}
-        </span>
-      </div>
+      <OfficialPhotoGallery
+        photos={item.official_photos || []}
+        name={item.name}
+        typeLabel={TYPE_LABEL[item.type] || item.type}
+      />
 
       <div className="p-4 space-y-4">
         <div>
@@ -232,12 +227,12 @@ export default function ListingPage() {
         </div>
 
         <div className="pt-2">
-          <ReviewSection listingId={id} listingName={item.name} />
+          <VenueRounds listingId={id} listingName={item.name} />
         </div>
 
-        <p className="text-xs text-muted-foreground pt-1">
-          Tee times and reservations will appear here as venues connect. No availability is shown until verified.
-        </p>
+        <div className="pt-2">
+          <ReviewSection listingId={id} listingName={item.name} />
+        </div>
       </div>
     </div>
   );

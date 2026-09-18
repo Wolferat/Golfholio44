@@ -115,10 +115,15 @@ export default function ReviewSection({ listingId, listingName }) {
                             />
                           ))}
                         </div>
-                        <span className="text-xs text-muted-foreground">{mine ? 'You' : 'Golfer'}</span>
+                        <span className="text-xs text-muted-foreground">{mine ? 'You' : (r.author_name || 'Golfer')}</span>
                         {r.created_date && (
                           <span className="text-xs text-muted-foreground">
                             {format(parseISO(r.created_date), 'MMM d')}
+                          </span>
+                        )}
+                        {r.visit_date && (
+                          <span className="text-xs text-muted-foreground">
+                            · Visited {format(parseISO(r.visit_date), 'MMM d')}
                           </span>
                         )}
                         {r.status !== 'approved' && (
@@ -145,7 +150,8 @@ export default function ReviewSection({ listingId, listingName }) {
                         </div>
                       )}
                     </div>
-                    <p className="text-sm mt-2 leading-relaxed">{r.body}</p>
+                    {r.title && <p className="font-semibold text-sm mt-2">{r.title}</p>}
+                    <p className="text-sm mt-1 leading-relaxed">{r.body}</p>
                     {r.photo_url && (
                       <img src={r.photo_url} alt="Review" className="h-32 w-32 rounded-xl object-cover mt-3" />
                     )}
