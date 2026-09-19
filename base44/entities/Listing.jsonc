@@ -69,6 +69,64 @@
       "type": "string",
       "format": "date-time"
     },
+    "event_timezone": {
+      "type": "string",
+      "description": "IANA timezone identifier for the event's local time (e.g. America/Chicago). Used for accurate expiration calculation."
+    },
+    "registration_deadline": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Official registration deadline, when published by the organizer."
+    },
+    "individual_entry_fee": {
+      "type": "number",
+      "description": "Per-player entry fee when stated by the official source."
+    },
+    "team_entry_fee": {
+      "type": "number",
+      "description": "Per-team entry fee when stated by the official source."
+    },
+    "currency": {
+      "type": "string",
+      "default": "USD",
+      "description": "ISO 4217 currency code for entry fees."
+    },
+    "fee_status": {
+      "type": "string",
+      "enum": [
+        "known",
+        "free",
+        "variable",
+        "unknown"
+      ],
+      "default": "unknown",
+      "description": "Whether the entry fee is known, free, variable, or unknown."
+    },
+    "event_format": {
+      "type": "string",
+      "description": "Tournament format (e.g. stroke play, scramble, best ball) \u2014 only when stated by the source."
+    },
+    "team_size": {
+      "type": "number",
+      "description": "Team size (e.g. 2, 4) \u2014 only when stated by the source."
+    },
+    "eligibility": {
+      "type": "string",
+      "description": "Eligibility requirements (e.g. Open, Members, Amateur) \u2014 only when stated by the source."
+    },
+    "included_items": {
+      "type": "string",
+      "description": "What the entry fee includes (e.g. green fee, cart, lunch) \u2014 only when stated by the source."
+    },
+    "contact_email": {
+      "type": "string",
+      "description": "Organizer contact email \u2014 only if published by the official organizer."
+    },
+    "last_source_verification": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the last source verification check for this event's details."
+    },
     "status": {
       "type": "string",
       "enum": [

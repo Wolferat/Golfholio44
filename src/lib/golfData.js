@@ -37,12 +37,21 @@ export async function getListingById(id, loc = {}) {
   return res.data.item || null;
 }
 
+export async function getTournaments(loc = {}) {
+  const res = await base44.functions.invoke('getTournaments', loc);
+  return res.data.items;
+}
+
+export async function searchTournaments(query, loc = {}) {
+  const res = await base44.functions.invoke('getTournaments', { query, ...loc });
+  return res.data.items;
+}
+
 export async function getLiveTournaments(loc = {}) {
-  const res = await base44.functions.invoke('getGolfListings', { category: 'all', ...loc });
+  const res = await base44.functions.invoke('getTournaments', loc);
   const now = new Date();
-  const eventTypes = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
   return (res.data.items || [])
-    .filter((t) => t.startsAt && eventTypes.has(t.type))
+    .filter((t) => t.startsAt)
     .map((t) => ({
       ...t,
       live: t.live || (new Date(t.startsAt) <= now && (!t.endsAt || new Date(t.endsAt) >= now)),

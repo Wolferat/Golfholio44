@@ -6,6 +6,7 @@ import {
   publicPhoto,
   EVENT_TYPES,
 } from '../../shared/publicListingPolicy.ts';
+import { evaluateTournamentListing, isTournamentType, formatTournamentDto } from '../../shared/tournamentPolicy.ts';
 
 // ============================================================
 // Server-side listing detail endpoint — hardened.
@@ -71,7 +72,10 @@ export default async function (req) {
     const record = await base44.asServiceRole.entities.Listing.get(id).catch(() => null);
     if (!record) return Response.json({ item: null });
 
-    const ev = evaluatePublicListing(record, centerLat, centerLng, radius);
+    const isEvent = isTournamentType(record);
+    const ev = isEvent
+      ? evaluateTournamentListing(record, centerLat, centerLng, radius)
+      : evaluatePublicListing(record, centerLat, centerLng, radius);
     if (!ev) return Response.json({ item: null });
 
     // Fetch accepted official photos from the OfficialPhoto entity (admin-only RLS)
@@ -200,6 +204,19 @@ export default async function (req) {
         longitude: record.longitude ?? null,
         is_professional_tournament: record.is_professional_tournament || false,
         official_registration_url: record.official_registration_url || null,
+        // Tournament-specific fields
+        event_timezone: record.event_timezone || null,
+        registration_deadline: record.registration_deadline || null,
+        individual_entry_fee: typeof record.individual_entry_fee === 'number' ? record.individual_entry_fee : null,
+        team_entry_fee: typeof record.team_entry_fee === 'number' ? record.team_entry_fee : null,
+        currency: record.currency || 'USD',
+        fee_status: record.fee_status || 'unknown',
+        event_format: record.event_format || null,
+        team_size: typeof record.team_size === 'number' ? record.team_size : null,
+        eligibility: record.eligibility || null,
+        included_items: record.included_items || null,
+        contact_email: record.contact_email || null,
+        last_source_verification: record.last_source_verification || record.verified_at || record.golf_verified_at || null,
         reviews,
         my_review: myReview,
       },

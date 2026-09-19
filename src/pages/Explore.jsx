@@ -4,6 +4,8 @@ import { Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import NightHero from '@/components/golf/NightHero';
 import VenueCard from '@/components/golf/VenueCard';
+import TournamentCard from '@/components/golf/TournamentCard';
+import TournamentEmptyState from '@/components/golf/TournamentEmptyState';
 import VenueDeckSkeleton from '@/components/golf/VenueDeckSkeleton';
 import LiveTicker from '@/components/golf/LiveTicker';
 import LocationSheet from '@/components/golf/LocationSheet';
@@ -12,7 +14,7 @@ import ExploreEmptyState from '@/components/golf/ExploreEmptyState';
 import AccountMenu from '@/components/golf/AccountMenu';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
-import { getListings, searchListings, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
+import { getListings, searchListings, getTournaments, searchTournaments, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
 import { useGate } from '@/components/golf/GateProvider';
@@ -65,12 +67,23 @@ export default function Explore() {
     }
     setLoading(true);
     try {
-      const [data, tour] = await Promise.all([
-        query ? searchListings(query, category, locParam) : getListings(category, locParam),
-        getLiveTournaments(locParam),
-      ]);
-      setItems(data);
-      setTournaments(tour);
+      if (category === 'tournament') {
+        // Tournament search mode — dedicated server endpoint with
+        // tournament-specific policy (dates, expiration, source-backed)
+        const [data, tour] = await Promise.all([
+          query ? searchTournaments(query, locParam) : getTournaments(locParam),
+          getLiveTournaments(locParam),
+        ]);
+        setItems(data);
+        setTournaments(tour);
+      } else {
+        const [data, tour] = await Promise.all([
+          query ? searchListings(query, category, locParam) : getListings(category, locParam),
+          getLiveTournaments(locParam),
+        ]);
+        setItems(data);
+        setTournaments(tour);
+      }
     } catch {
       setItems([]);
     }
@@ -177,7 +190,7 @@ export default function Explore() {
 
             <section className="px-4 mt-5">
               <div className="flex items-end justify-between mb-1">
-                <h2 className="text-xl font-extrabold tracking-tight">Near you now</h2>
+                <h2 className="text-xl font-extrabold tracking-tight">{category === 'tournament' ? 'Tournaments near you' : 'Near you now'}</h2>
                 <span className="text-xs text-muted-foreground">
                   {loc.coords ? 'Near you' : 'Within 15 miles'}
                 </span>
@@ -186,18 +199,33 @@ export default function Explore() {
               {loading ? (
                 <VenueDeckSkeleton />
               ) : items.length === 0 ? (
-                <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
+                category === 'tournament' ? (
+                  <TournamentEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
+                ) : (
+                  <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
+                )
               ) : (
                 <div className="grid grid-cols-1 gap-3.5">
                   {items.map((item, i) => (
-                    <VenueCard
-                      key={item.id}
-                      item={item}
-                      index={i}
-                      saved={saved.has(item.id)}
-                      onToggleSave={() => handleToggleSave(item.id)}
-                      onOpen={() => navigate('/listing/' + item.id)}
-                    />
+                    category === 'tournament' ? (
+                      <TournamentCard
+                        key={item.id}
+                        item={item}
+                        index={i}
+                        saved={saved.has(item.id)}
+                        onToggleSave={() => handleToggleSave(item.id)}
+                        onOpen={() => navigate('/listing/' + item.id)}
+                      />
+                    ) : (
+                      <VenueCard
+                        key={item.id}
+                        item={item}
+                        index={i}
+                        saved={saved.has(item.id)}
+                        onToggleSave={() => handleToggleSave(item.id)}
+                        onOpen={() => navigate('/listing/' + item.id)}
+                      />
+                    )
                   ))}
                 </div>
               )}

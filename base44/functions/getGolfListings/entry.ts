@@ -6,6 +6,7 @@ import {
   publicPhoto,
   EVENT_TYPES,
 } from '../../shared/publicListingPolicy.ts';
+import { evaluateTournamentListing, TOURNAMENT_TYPES } from '../../shared/tournamentPolicy.ts';
 
 export default async function (req) {
   try {
@@ -52,7 +53,9 @@ export default async function (req) {
 
     let records = await base44.asServiceRole.entities.Listing.filter({ status: 'approved' });
 
-    if (category && category !== 'all') {
+    if (category === 'tournament') {
+      records = records.filter((r) => TOURNAMENT_TYPES.has(r.type));
+    } else if (category && category !== 'all') {
       records = records.filter((r) => r.type === category);
     }
     if (query) {
@@ -67,7 +70,10 @@ export default async function (req) {
 
     const items = [];
     for (const r of records) {
-      const ev = evaluatePublicListing(r, centerLat, centerLng, radius);
+      const isEvent = EVENT_TYPES.has(r.type);
+      const ev = isEvent
+        ? evaluateTournamentListing(r, centerLat, centerLng, radius)
+        : evaluatePublicListing(r, centerLat, centerLng, radius);
       if (!ev) continue;
       const startsAt = r.starts_at || null;
       const endsAt = r.ends_at || null;

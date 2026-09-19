@@ -1,0 +1,86 @@
+{
+  "name": "CoverageRequest",
+  "type": "object",
+  "properties": {
+    "area_label": {
+      "type": "string",
+      "description": "Human-readable area description (e.g. 'Sherman, TX' or '75mi around Dallas, TX')"
+    },
+    "latitude": {
+      "type": "number",
+      "description": "Center latitude for the coverage search area"
+    },
+    "longitude": {
+      "type": "number",
+      "description": "Center longitude for the coverage search area"
+    },
+    "radius_miles": {
+      "type": "number",
+      "default": 15,
+      "description": "Search radius in miles (max 30)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "processing",
+        "completed",
+        "failed"
+      ],
+      "default": "pending"
+    },
+    "requested_by_id": {
+      "type": "string",
+      "description": "User ID who requested coverage, or 'system' for scheduled runs"
+    },
+    "last_run_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "result_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of candidates discovered (before dedup/exclusion)"
+    },
+    "accepted_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of candidates that passed validation and were created as pending listings"
+    },
+    "exclusion_reasons": {
+      "type": "string",
+      "description": "JSON array of private exclusion reasons for rejected candidates"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error details if status is 'failed'"
+    }
+  },
+  "required": [
+    "area_label",
+    "latitude",
+    "longitude"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

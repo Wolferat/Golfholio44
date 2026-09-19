@@ -1,0 +1,45 @@
+{
+  "name": "Tournament Coverage",
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "tournament_coverage",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "run_coverage": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "runTournamentCoverage",
+            "args": {}
+          },
+          "then": "end",
+          "x-base44": {
+            "title": "Run tournament coverage",
+            "description": "Discover and validate golf events from authoritative sources"
+          }
+        }
+      }
+    ]
+  },
+  "trigger": {
+    "condition": null,
+    "config": {
+      "trigger_type": "scheduled",
+      "events": [],
+      "schedule_mode": "recurring",
+      "cron_expression": "0 9 * * 1",
+      "one_time_date": null,
+      "timezone": "America/Chicago",
+      "interval_value": null,
+      "interval_unit": null,
+      "interval_anchor": null,
+      "ends_type": "never",
+      "ends_on_date": null,
+      "ends_after_count": null
+    }
+  },
+  "description": "Server-controlled tournament discovery from authoritative sources. INACTIVE by default \u2014 does not run until explicitly activated by an admin. Discovers candidate golf events from official venue/organizer websites, validates them, deduplicates, and creates pending (non-player-visible) listings."
+}
