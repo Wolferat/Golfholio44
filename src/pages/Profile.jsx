@@ -7,6 +7,7 @@ import GlassHeader from '@/components/golf/GlassHeader';
 import BottomSheet from '@/components/golf/BottomSheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import HandicapEstimateCard from '@/components/golf/HandicapEstimateCard';
 
 export default function Profile() {
   const { user, logout } = useAuth();
@@ -44,6 +45,10 @@ export default function Profile() {
       <div className="mt-2">
         {isAdmin && <Row icon={Shield} label="Admin Workspace" onClick={() => navigate('/admin')} />}
         <Row icon={UserCircle} label="Account & Preferences" onClick={() => {}} />
+      </div>
+
+      <div className="px-4 mt-4">
+        <HandicapEstimateCard />
       </div>
 
       <div className="px-4 mt-6">

@@ -24,6 +24,11 @@ export default async function (req) {
     const lat = body.lat != null ? Number(body.lat) : null;
     const lng = body.lng != null ? Number(body.lng) : null;
     const near = (body.near || '').trim();
+    const requestedRadius = Number(body.radius) || 15;
+
+    // Server-side radius validation: 15 default, 30 max.
+    // The client cannot request 31+ miles or bypass the 15/30 rule.
+    const radius = Math.min(Math.max(requestedRadius, 1), 30);
 
     // Player location is REQUIRED. No silent default to any fixed city.
     let centerLat = null;
@@ -62,7 +67,7 @@ export default async function (req) {
 
     const items = [];
     for (const r of records) {
-      const ev = evaluatePublicListing(r, centerLat, centerLng);
+      const ev = evaluatePublicListing(r, centerLat, centerLng, radius);
       if (!ev) continue;
       const startsAt = r.starts_at || null;
       const endsAt = r.ends_at || null;
@@ -101,9 +106,9 @@ export default async function (req) {
       return 0;
     });
 
-    return Response.json({ items });
+    return Response.json({ items, radius });
   } catch (error) {
     // Fail closed: any error → empty result set.
-    return Response.json({ items: [] });
+    return Response.json({ items: [], radius: 15 });
   }
 }

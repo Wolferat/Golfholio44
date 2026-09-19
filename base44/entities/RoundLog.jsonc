@@ -29,6 +29,42 @@
     "format": {
       "type": "string",
       "description": "Optional course/format details (e.g. stroke play, scramble)"
+    },
+    "tee_name": {
+      "type": "string",
+      "description": "Tee name/color (e.g. Blue, White, Gold)"
+    },
+    "par": {
+      "type": "number",
+      "description": "Par for the tee and applicable holes"
+    },
+    "course_rating": {
+      "type": "number",
+      "description": "Course Rating for the tee and applicable holes"
+    },
+    "slope_rating": {
+      "type": "number",
+      "description": "Slope Rating for the tee and applicable holes"
+    },
+    "adjusted_gross_score": {
+      "type": "number",
+      "description": "Adjusted Gross Score \u2014 defaults to gross score when no hole-by-hole adjustment is available"
+    },
+    "pcc_adjustment": {
+      "type": "number",
+      "description": "PCC adjustment only when from a reliable/authorized source"
+    },
+    "rating_source": {
+      "type": "string",
+      "description": "Source/provenance for rating and slope data (e.g. scorecard, official site)"
+    },
+    "handicap_eligible": {
+      "type": "boolean",
+      "default": false
+    },
+    "eligibility_reason": {
+      "type": "string",
+      "description": "Why ineligible (e.g. 'missing course rating', '9-hole round')"
     }
   },
   "required": [

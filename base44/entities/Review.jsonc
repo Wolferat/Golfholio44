@@ -34,11 +34,23 @@
       "enum": [
         "approved",
         "pending",
-        "rejected"
+        "rejected",
+        "hidden"
       ],
       "default": "pending"
     },
     "moderation_note": {
+      "type": "string"
+    },
+    "admin_action_by": {
+      "type": "string",
+      "description": "Admin user ID who last moderated this review"
+    },
+    "admin_action_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "admin_action_reason": {
       "type": "string"
     }
   },

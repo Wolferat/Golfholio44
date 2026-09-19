@@ -182,7 +182,9 @@ export default async function (req) {
       });
       const mod = result?.data || result;
       if (mod && typeof mod.safe === 'boolean') {
-        status = mod.safe ? 'approved' : 'rejected';
+        // LLM-safe → pending (requires admin approval before display)
+        // LLM-unsafe → rejected (hidden from other players)
+        status = mod.safe ? 'pending' : 'rejected';
         modNote = (mod.reason || '').slice(0, 300);
       } else {
         status = 'pending';

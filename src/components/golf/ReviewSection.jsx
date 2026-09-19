@@ -110,7 +110,11 @@ export default function ReviewSection({ listingId, listingName, reviews = [], my
                         : 'bg-destructive/15 text-destructive'
                     )}
                   >
-                    {myReview.status === 'pending' ? 'In review' : 'Not approved'}
+                    {myReview.status === 'pending'
+                      ? 'Under review'
+                      : myReview.status === 'hidden'
+                      ? 'Hidden by admin'
+                      : 'Not published'}
                   </span>
                 )}
               </div>

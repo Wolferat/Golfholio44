@@ -48,6 +48,8 @@ export default async function (req) {
     const lat = body.lat != null ? Number(body.lat) : null;
     const lng = body.lng != null ? Number(body.lng) : null;
     const near = (body.near || '').trim();
+    const requestedRadius = Number(body.radius) || 15;
+    const radius = Math.min(Math.max(requestedRadius, 1), 30);
 
     let centerLat = null;
     let centerLng = null;
@@ -69,7 +71,7 @@ export default async function (req) {
     const record = await base44.asServiceRole.entities.Listing.get(id).catch(() => null);
     if (!record) return Response.json({ item: null });
 
-    const ev = evaluatePublicListing(record, centerLat, centerLng);
+    const ev = evaluatePublicListing(record, centerLat, centerLng, radius);
     if (!ev) return Response.json({ item: null });
 
     // Fetch accepted official photos from the OfficialPhoto entity (admin-only RLS)
@@ -194,6 +196,8 @@ export default async function (req) {
         rating: record.rating ?? null,
         distance: ev.distance,
         coords: true,
+        latitude: record.latitude ?? null,
+        longitude: record.longitude ?? null,
         is_professional_tournament: record.is_professional_tournament || false,
         official_registration_url: record.official_registration_url || null,
         reviews,

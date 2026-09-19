@@ -86,6 +86,21 @@ export async function getAdminMetrics() {
   return res.data;
 }
 
+export async function moderateReview(reviewId, action, reason) {
+  const res = await base44.functions.invoke('moderateReview', { review_id: reviewId, action, reason });
+  return res.data;
+}
+
+export async function getHandicapEstimate() {
+  const res = await base44.functions.invoke('getHandicapEstimate', {});
+  return res.data;
+}
+
+export async function resolveLocation(params) {
+  const res = await base44.functions.invoke('resolveLocation', params);
+  return res.data;
+}
+
 // ============================================================
 // My Game & Crew — mock data (wired to Supabase in a follow-up)
 // ============================================================

@@ -1,0 +1,56 @@
+{
+  "name": "ReviewAction",
+  "type": "object",
+  "properties": {
+    "review_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "reject",
+        "hide",
+        "restore"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "actor_id": {
+      "type": "string",
+      "description": "Admin user ID who performed the action"
+    },
+    "actor_name": {
+      "type": "string",
+      "description": "Admin display name at time of action"
+    }
+  },
+  "required": [
+    "review_id",
+    "action",
+    "actor_id"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

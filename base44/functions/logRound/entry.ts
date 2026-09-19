@@ -32,6 +32,13 @@ export default async function (req) {
     const notes = (body.notes || '').trim();
     const format = (body.format || '').trim();
     const listingName = (body.listing_name || '').trim();
+    const teeName = (body.tee_name || '').trim();
+    const par = body.par != null ? Number(body.par) : null;
+    const courseRating = body.course_rating != null ? Number(body.course_rating) : null;
+    const slopeRating = body.slope_rating != null ? Number(body.slope_rating) : null;
+    const adjustedGrossScore = body.adjusted_gross_score != null ? Number(body.adjusted_gross_score) : null;
+    const pccAdjustment = body.pcc_adjustment != null ? Number(body.pcc_adjustment) : null;
+    const ratingSource = (body.rating_source || '').trim();
 
     if (!listingId) return Response.json({ error: 'Listing required' }, { status: 400 });
     if (!date) return Response.json({ error: 'Date required' }, { status: 400 });
@@ -53,6 +60,15 @@ export default async function (req) {
       return Response.json({ error: 'This listing is not eligible for rounds' }, { status: 403 });
     }
 
+    // Determine handicap eligibility: 18 holes + course rating + slope rating required
+    const hasRatings = courseRating != null && slopeRating != null && Number.isFinite(courseRating) && Number.isFinite(slopeRating);
+    const handicapEligible = holes === 18 && hasRatings;
+    let eligibilityReason = null;
+    if (!handicapEligible) {
+      if (holes === 9) eligibilityReason = '9-hole rounds do not count toward the 18-hole estimate';
+      else if (!hasRatings) eligibilityReason = 'missing Course Rating or Slope Rating';
+    }
+
     const payload = {
       listing_id: listingId,
       listing_name: listingName || record.name || null,
@@ -61,6 +77,15 @@ export default async function (req) {
       score,
       notes: notes || null,
       format: format || null,
+      tee_name: teeName || null,
+      par: (par != null && Number.isFinite(par)) ? par : null,
+      course_rating: (courseRating != null && Number.isFinite(courseRating)) ? courseRating : null,
+      slope_rating: (slopeRating != null && Number.isFinite(slopeRating)) ? slopeRating : null,
+      adjusted_gross_score: (adjustedGrossScore != null && Number.isFinite(adjustedGrossScore)) ? adjustedGrossScore : score,
+      pcc_adjustment: (pccAdjustment != null && Number.isFinite(pccAdjustment)) ? pccAdjustment : 0,
+      rating_source: ratingSource || null,
+      handicap_eligible: handicapEligible,
+      eligibility_reason: eligibilityReason,
     };
 
     if (roundId) {

@@ -10,6 +10,7 @@ import ScheduleTeeTime from '@/components/golf/ScheduleTeeTime';
 import ScorecardListItem from '@/components/golf/ScorecardListItem';
 import TeeTimeListItem from '@/components/golf/TeeTimeListItem';
 import { useToast } from '@/components/ui/use-toast';
+import HandicapEstimateCard from '@/components/golf/HandicapEstimateCard';
 
 const playerTotal = (card, name) =>
   Object.values((card.scores || {})[name] || {}).reduce((a, b) => a + (Number(b) || 0), 0);
@@ -99,6 +100,9 @@ export default function Play() {
 
       <PullToRefresh onRefresh={load}>
         <div className="p-4 space-y-5">
+          {/* Golfolio Handicap Estimate */}
+          <HandicapEstimateCard />
+
           {/* summary tiles — 18-hole and 9-hole tracked separately */}
           <div className="grid grid-cols-2 gap-3">
             {[

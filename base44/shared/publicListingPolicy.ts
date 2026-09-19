@@ -7,6 +7,8 @@
 // ============================================================
 
 const RADIUS_MI = 15;
+export const DEFAULT_RADIUS_MI = 15;
+export const MAX_RADIUS_MI = 30;
 
 const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
 
@@ -84,10 +86,11 @@ function isNumber(v) {
 // failing reason. Used by the audit diagnostic; the simple
 // evaluatePublicListing predicate below derives from this so there
 // is exactly ONE trust gate.
-export function checkPublicListing(record, playerLat, playerLng) {
+export function checkPublicListing(record, playerLat, playerLng, radiusMi) {
   const checks = [];
   const add = (rule, pass, reason) =>
     checks.push({ rule, pass: !!pass, reason: pass ? null : reason });
+  const effectiveRadius = Math.min(Math.max(radiusMi || RADIUS_MI, 1), MAX_RADIUS_MI);
 
   if (!record) {
     return {
@@ -152,7 +155,7 @@ export function checkPublicListing(record, playerLat, playerLng) {
     isNumber(playerLng)
   ) {
     distance = Math.round(haversineMi(playerLat, playerLng, record.latitude, record.longitude) * 10) / 10;
-    add('within_15mi', distance <= RADIUS_MI, `distance=${distance}mi > ${RADIUS_MI}mi`);
+    add('within_radius', distance <= effectiveRadius, `distance=${distance}mi > ${effectiveRadius}mi`);
   } else {
     add('within_15mi', false, 'cannot compute distance (missing coordinates)');
   }
@@ -172,8 +175,8 @@ export function checkPublicListing(record, playerLat, playerLng) {
 
 // Returns { distance } when the record is eligible to be shown to a player,
 // or null when it must NOT be shown. Fail closed: any uncertainty → null.
-export function evaluatePublicListing(record, playerLat, playerLng) {
-  const result = checkPublicListing(record, playerLat, playerLng);
+export function evaluatePublicListing(record, playerLat, playerLng, radiusMi) {
+  const result = checkPublicListing(record, playerLat, playerLng, radiusMi);
   return result.pass ? { distance: result.distance } : null;
 }
 

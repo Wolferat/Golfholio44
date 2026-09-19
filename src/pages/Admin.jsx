@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Check, X, ShieldCheck, ImageOff, Flag, ShieldAlert, ClipboardList, FileSearch, MapPin, AlertTriangle, Copy, Link2Off, ImageUp, CalendarX, Table2, BadgeCheck, Globe, FileQuestion, BarChart3, Camera, MessageSquareWarning } from 'lucide-react';
-import { getPendingPhotos, reviewPhoto, getFlaggedListings, getPendingListings, reviewListingAction, getAuditReport, getAdminMetrics } from '@/lib/golfData';
+import { getPendingPhotos, reviewPhoto, getFlaggedListings, getPendingListings, reviewListingAction, getAuditReport, getAdminMetrics, moderateReview } from '@/lib/golfData';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 import AuditTable from '@/components/golf/AuditTable';
+import AdminReviews from '@/components/golf/AdminReviews';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -16,6 +17,7 @@ export default function Admin() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(false);
+  const [reviewQueue, setReviewQueue] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +37,9 @@ export default function Admin() {
       } else if (tab === 'metrics') {
         const m = await getAdminMetrics();
         setMetrics(m);
+      } else if (tab === 'reviews') {
+        const m = await getAdminMetrics();
+        setReviewQueue(m?.reviews?.queue || []);
       }
     } catch {}
     setLoading(false);
@@ -50,6 +55,11 @@ export default function Admin() {
     setReviewing(false);
   };
 
+  const handleReviewAction = async (id, action, reason) => {
+    await moderateReview(id, action, reason);
+    await load();
+  };
+
   if (user?.role !== 'admin') {
     return (
       <div className="safe-top px-4 pt-24 text-center text-muted-foreground">
@@ -62,6 +72,7 @@ export default function Admin() {
 
   const tabs = [
     { key: 'pending', label: 'Pending', count: pending.length },
+    { key: 'reviews', label: 'Reviews', count: reviewQueue.length },
     { key: 'audit', label: 'Audit', count: null },
     { key: 'auditTable', label: 'Audit Table', count: null },
     { key: 'photos', label: 'Photos', count: photos.length },
@@ -155,6 +166,8 @@ export default function Admin() {
             ))}
           </div>
         )
+      ) : tab === 'reviews' ? (
+        <AdminReviews reviews={reviewQueue} onAction={handleReviewAction} />
       ) : tab === 'metrics' ? (
         <MetricsView metrics={metrics} />
       ) : (

@@ -51,9 +51,10 @@ export default function Explore() {
   }, [loc.sheetOpen, setHidden]);
 
   // Location is required before any player-facing query runs.
+  // Pass the radius so the server can validate (15 default, 30 max).
   const locParam = loc.coords
-    ? { lat: loc.coords.lat, lng: loc.coords.lng }
-    : (loc.city ? { near: loc.city } : null);
+    ? { lat: loc.coords.lat, lng: loc.coords.lng, radius: loc.radius }
+    : (loc.city ? { near: loc.city, radius: loc.radius } : null);
 
   const load = useCallback(async () => {
     if (!locParam) {
@@ -74,7 +75,7 @@ export default function Explore() {
       setItems([]);
     }
     setLoading(false);
-  }, [category, query, loc.coords, loc.city]);
+  }, [category, query, loc.coords, loc.city, loc.radius]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (isAuthed) getSavedIds().then(setSaved).catch(() => {}); }, [isAuthed]);
@@ -112,6 +113,29 @@ export default function Explore() {
           onUseLocation={loc.useGps}
           locating={loc.locating}
         />
+
+        {/* 30-mile expansion — temporary for this session only */}
+        {loc.hasLocation && !loc.radiusExpanded && (
+          <div className="px-4 mt-2">
+            <button
+              onClick={loc.expandRadius}
+              className="w-full h-10 rounded-xl glass-card border border-border text-sm font-medium text-primary flex items-center justify-center gap-2"
+            >
+              Search up to 30 miles
+            </button>
+          </div>
+        )}
+        {loc.radiusExpanded && (
+          <div className="px-4 mt-2 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Showing results within 30 miles</span>
+            <button
+              onClick={loc.resetRadius}
+              className="text-xs font-semibold text-primary"
+            >
+              Reset to 15 mi
+            </button>
+          </div>
+        )}
 
         {loc.hasLocation ? (
           <>
@@ -195,8 +219,10 @@ export default function Explore() {
         open={loc.sheetOpen}
         onClose={() => loc.setSheetOpen(false)}
         city={loc.city}
-        onSave={loc.saveCity}
+        state={loc.state}
         onUseGps={loc.useGps}
+        onSearch={loc.searchLocation}
+        onConfirm={loc.confirmLocation}
         locating={loc.locating}
         hasCoords={!!loc.coords}
         locationError={loc.locationError}

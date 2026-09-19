@@ -14,6 +14,7 @@ import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { getDirectionsUrl, canShowDirections } from '@/lib/directions';
 
 const TYPE_LABEL = {
   course: 'Course',
@@ -99,9 +100,8 @@ export default function ListingPage() {
     setFlagging(false);
   };
 
-  const directionsUrl = item
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address || item.location || item.name)}`
-    : '#';
+  const directionsUrl = item ? getDirectionsUrl(item) : '#';
+  const hasDirections = item ? canShowDirections(item) : false;
 
   if (loading) {
     return (
@@ -210,11 +210,17 @@ export default function ListingPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <a href={directionsUrl} target="_blank" rel="noreferrer">
-            <Button variant="secondary" className="h-12 w-full">
+          {hasDirections ? (
+            <a href={directionsUrl} target="_blank" rel="noreferrer">
+              <Button variant="secondary" className="h-12 w-full">
+                <Navigation className="h-4 w-4" /> Directions
+              </Button>
+            </a>
+          ) : (
+            <Button variant="secondary" className="h-12 w-full" disabled>
               <Navigation className="h-4 w-4" /> Directions
             </Button>
-          </a>
+          )}
           {item.website ? (
             <a href={item.website} target="_blank" rel="noreferrer">
               <Button variant="secondary" className="h-12 w-full">

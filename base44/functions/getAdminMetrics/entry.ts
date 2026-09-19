@@ -53,24 +53,36 @@ export default async function (req) {
       .list('-created_date', 200)
       .catch(() => []);
 
-    const reviewCounts = { approved: 0, pending: 0, rejected: 0 };
+    const reviewCounts = { approved: 0, pending: 0, rejected: 0, hidden: 0 };
     for (const r of allReviews) {
       if (reviewCounts[r.status] != null) {
         reviewCounts[r.status]++;
       }
     }
 
-    // Pending/rejected reviews with safety flags
-    const flaggedReviews = allReviews
-      .filter((r) => r.status === 'pending' || r.status === 'rejected')
-      .slice(0, 15)
+    // Full review queue for admin moderation — all non-approved reviews
+    // with complete data for the admin review surface
+    const reviewQueue = allReviews
+      .filter((r) => r.status !== 'approved')
+      .slice(0, 50)
       .map((r) => ({
         id: r.id,
+        listing_id: r.listing_id,
         listing_name: r.listing_name || 'Unknown',
         rating: r.rating,
+        title: r.title || '',
+        body: r.body || '',
+        visit_date: r.visit_date || null,
+        author_name: r.author_name || 'Golfer',
         status: r.status,
         moderation_note: r.moderation_note || '',
+        has_photo: !!r.photo_uri,
+        photo_safety_state: r.photo_uri ? (r.status === 'rejected' ? 'rejected' : 'pending') : 'none',
         created_date: r.created_date,
+        updated_date: r.updated_date,
+        admin_action_by: r.admin_action_by || null,
+        admin_action_at: r.admin_action_at || null,
+        admin_action_reason: r.admin_action_reason || null,
       }));
 
     // Listing inaccuracy reports (pending)
@@ -96,7 +108,7 @@ export default async function (req) {
       reviews: {
         counts: reviewCounts,
         total: allReviews.length,
-        flagged: flaggedReviews,
+        queue: reviewQueue,
       },
       reports: {
         pending_count: pendingReports.length,
