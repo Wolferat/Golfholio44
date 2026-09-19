@@ -102,6 +102,24 @@ export async function resolveLocation(params) {
 }
 
 // ============================================================
+// Player Profile — public profile management
+// ============================================================
+export async function getMyProfileEntity() {
+  const profiles = await base44.entities.GolferProfile.filter({});
+  return profiles[0] || null;
+}
+
+export async function getPublicProfile(params) {
+  const res = await base44.functions.invoke('getPlayerProfile', params);
+  return res.data.profile;
+}
+
+export async function savePlayerProfile(data) {
+  const res = await base44.functions.invoke('savePlayerProfile', data);
+  return res.data;
+}
+
+// ============================================================
 // My Game & Crew — mock data (wired to Supabase in a follow-up)
 // ============================================================
 const delay = (ms = 300) => new Promise((r) => setTimeout(r, ms));

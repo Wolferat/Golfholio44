@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import GlassHeader from '@/components/golf/GlassHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
@@ -7,17 +8,32 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
-import { MapPin, Bell, ShieldCheck } from 'lucide-react';
+import { MapPin, Bell, ShieldCheck, Mail, Lock, User, ChevronLeft, Check } from 'lucide-react';
 import { buildLabel } from '@/lib/buildInfo';
 
+// ============================================================
+// Settings (Account & Preferences) — private account fields.
+//
+// All fields save through base44.auth.updateMe(), the platform's
+// authorized path for User entity updates. After a successful
+// save, refreshUser() updates the cached auth state so changes
+// persist across refresh/re-login.
+//
+// Email and password are authentication credentials managed by
+// the platform's auth provider — they are NOT editable here.
+// ============================================================
+
 export default function Settings() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [phone, setPhone] = useState('');
   const [homeCity, setHomeCity] = useState('');
   const [notifications, setNotifications] = useState(true);
   const [privacy, setPrivacy] = useState(true);
+  const [displayNamePref, setDisplayNamePref] = useState('username');
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,6 +44,7 @@ export default function Settings() {
         setHomeCity(me.home_city || '');
         setNotifications(me.notifications !== false);
         setPrivacy(me.privacy !== false);
+        setDisplayNamePref(me.display_name_preference || 'username');
       } catch {}
       setLoading(false);
     })();
@@ -35,11 +52,21 @@ export default function Settings() {
 
   const save = async () => {
     setSaving(true);
+    setSaved(false);
     try {
-      await base44.auth.updateMe({ phone, home_city: homeCity, notifications, privacy });
+      await base44.auth.updateMe({
+        phone,
+        home_city: homeCity,
+        notifications,
+        privacy,
+        display_name_preference: displayNamePref,
+      });
+      await refreshUser();
+      setSaved(true);
       toast({ title: 'Settings saved' });
-    } catch {
-      toast({ title: 'Could not save settings' });
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      toast({ title: 'Could not save settings', description: e?.message });
     }
     setSaving(false);
   };
@@ -47,28 +74,42 @@ export default function Settings() {
   return (
     <div>
       <GlassHeader>
-        <div className="h-[60px] px-4 flex items-center justify-between">
-          <h1 className="text-[22px] font-extrabold leading-none">Settings</h1>
+        <div className="h-[60px] px-4 flex items-center gap-3">
+          <button onClick={() => navigate('/profile')} className="text-muted-foreground hover:text-foreground transition">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <h1 className="text-[22px] font-extrabold leading-none">Account & Preferences</h1>
         </div>
       </GlassHeader>
 
       <div className="p-4 space-y-6">
+
+        {/* Email (read-only — auth credential) */}
         <section className="space-y-3">
-          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile</h2>
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <Mail className="h-3.5 w-3.5" /> Email
+          </h2>
           <div>
-            <Label className="text-sm text-muted-foreground">Name</Label>
-            <Input value={user?.full_name || ''} disabled className="mt-2 h-12 text-base opacity-70" />
-            <p className="text-xs text-muted-foreground mt-1">Your name is set on your Profile page.</p>
-          </div>
-          <div>
-            <Label className="text-sm text-muted-foreground">Phone</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" className="mt-2 h-12 text-base" />
+            <Input value={user?.email || ''} disabled className="h-12 text-base opacity-70" />
+            <p className="text-xs text-muted-foreground mt-1">Your email is your login credential. Email changes aren't available in the app.</p>
           </div>
         </section>
 
+        {/* Phone */}
         <section className="space-y-3">
           <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5" /> Location
+            <User className="h-3.5 w-3.5" /> Private Contact
+          </h2>
+          <div>
+            <Label className="text-sm text-muted-foreground">Phone</Label>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional — only you can see this" className="mt-2 h-12 text-base" />
+          </div>
+        </section>
+
+        {/* Location */}
+        <section className="space-y-3">
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5" /> Home Area
           </h2>
           <div>
             <Label className="text-sm text-muted-foreground">Home city / ZIP</Label>
@@ -77,16 +118,33 @@ export default function Settings() {
           </div>
         </section>
 
+        {/* Display name preference */}
+        <section className="space-y-3">
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Public Name</h2>
+          <div className="flex items-center justify-between rounded-xl bg-card border border-border p-3.5">
+            <div>
+              <div className="text-sm">Show as username</div>
+              <div className="text-xs text-muted-foreground">Toggle off to show your display name instead</div>
+            </div>
+            <Switch
+              checked={displayNamePref === 'username'}
+              onCheckedChange={(v) => setDisplayNamePref(v ? 'username' : 'display_name')}
+            />
+          </div>
+        </section>
+
+        {/* Notifications */}
         <section className="space-y-3">
           <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
             <Bell className="h-3.5 w-3.5" /> Notifications
           </h2>
           <div className="flex items-center justify-between rounded-xl bg-card border border-border p-3.5">
-            <span className="text-sm">Tee-time and round reminders</span>
+            <span className="text-sm">Round and tee-time reminders</span>
             <Switch checked={notifications} onCheckedChange={setNotifications} />
           </div>
         </section>
 
+        {/* Privacy */}
         <section className="space-y-3">
           <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5" /> Privacy
@@ -94,17 +152,33 @@ export default function Settings() {
           <div className="flex items-center justify-between rounded-xl bg-card border border-border p-3.5">
             <div>
               <div className="text-sm">Private account</div>
-              <div className="text-xs text-muted-foreground">Only you see your rounds and saved places.</div>
+              <div className="text-xs text-muted-foreground">Only you see your rounds, saved places, and profile.</div>
             </div>
             <Switch checked={privacy} onCheckedChange={setPrivacy} />
           </div>
         </section>
 
-        <Button className="w-full h-12" onClick={save} disabled={saving || loading}>
-          {saving ? 'Saving…' : 'Save settings'}
-        </Button>
+        {/* Authentication */}
+        <section className="space-y-3">
+          <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5" /> Authentication
+          </h2>
+          <div className="rounded-xl bg-card border border-border p-3.5 space-y-1.5">
+            <p className="text-sm">Your email and password are managed securely by the platform's auth provider.</p>
+            <p className="text-xs text-muted-foreground">To reset your password, sign out and use "Forgot password" on the login screen.</p>
+          </div>
+        </section>
 
-        <footer className="text-center text-xs text-muted-foreground pt-4 pb-2">
+        {/* Save button */}
+        <div className="space-y-2">
+          <Button className="w-full h-12" onClick={save} disabled={saving || loading}>
+            {saving ? 'Saving…' : saved ? (
+              <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Saved</span>
+            ) : 'Save preferences'}
+          </Button>
+        </div>
+
+        <footer className="text-center text-xs text-muted-foreground pt-2 pb-4">
           {buildLabel()}
         </footer>
       </div>

@@ -12,8 +12,8 @@
 const PREVIEW_BASE_URL = import.meta.env.VITE_BASE44_APP_BASE_URL;
 export const IS_PREVIEW = !!PREVIEW_BASE_URL;
 export const BUILD_ENV = IS_PREVIEW ? 'preview' : 'production';
-export const BUILD_REVISION = '2026.09.19-1';
-export const BUILD_DATE = '2026-09-18';
+export const BUILD_REVISION = '2026.09.19-2';
+export const BUILD_DATE = '2026-09-19';
 export function buildLabel() {
   return `Golfolio ${BUILD_REVISION} · ${IS_PREVIEW ? 'Preview' : 'Production'}`;
 }

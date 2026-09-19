@@ -10,18 +10,34 @@
     },
     "home_city": {
       "type": "string",
-      "description": "Player's home city or ZIP for Explore prefill"
+      "description": "Player's home city for Explore prefill"
+    },
+    "home_state": {
+      "type": "string",
+      "description": "Player's home state for Explore prefill"
     },
     "phone": {
-      "type": "string"
+      "type": "string",
+      "description": "Private phone number \u2014 owner only, never exposed publicly"
     },
     "notifications": {
       "type": "boolean",
-      "default": true
+      "default": true,
+      "description": "Notification preference (round/tee-time reminders)"
     },
     "privacy": {
       "type": "boolean",
-      "default": true
+      "default": true,
+      "description": "Private account \u2014 when true, profile is hidden from other players"
+    },
+    "display_name_preference": {
+      "type": "string",
+      "enum": [
+        "username",
+        "display_name"
+      ],
+      "default": "username",
+      "description": "Which name to show publicly on reviews and profile"
     }
   },
   "required": [

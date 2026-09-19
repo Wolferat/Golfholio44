@@ -3,27 +3,45 @@
   "type": "object",
   "properties": {
     "username": {
-      "type": "string"
+      "type": "string",
+      "description": "Unique player username, normalized lowercase. Server-side uniqueness enforced via savePlayerProfile."
     },
-    "name": {
-      "type": "string"
+    "display_name": {
+      "type": "string",
+      "description": "Optional public display name shown on profile and reviews"
     },
-    "home_city": {
-      "type": "string"
+    "first_name": {
+      "type": "string",
+      "description": "Optional first name \u2014 private to the owner, never exposed in public DTOs"
+    },
+    "last_name": {
+      "type": "string",
+      "description": "Optional last name \u2014 private to the owner, never exposed in public DTOs"
     },
     "bio": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional short golf bio \u2014 public"
     },
-    "avatar_url": {
-      "type": "string"
+    "avatar_uri": {
+      "type": "string",
+      "description": "Private file URI from UploadPrivateFile for uploaded avatars. Never exposed directly; signed URLs created server-side."
     },
-    "phone": {
-      "type": "string"
+    "avatar_source": {
+      "type": "string",
+      "enum": [
+        "upload",
+        "default",
+        "initials"
+      ],
+      "default": "initials"
+    },
+    "avatar_default_id": {
+      "type": "string",
+      "description": "ID of the chosen default avatar (golf_ball, flag_cup, golf_club, golf_cart)"
     }
   },
   "required": [
-    "username",
-    "name"
+    "username"
   ],
   "rls": {
     "read": {

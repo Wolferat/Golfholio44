@@ -41,7 +41,7 @@ export default function AccountMenu({ initials }) {
           <User className="h-4 w-4 mr-2" /> Profile
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate('/settings')}>
-          <SettingsIcon className="h-4 w-4 mr-2" /> Settings
+          <SettingsIcon className="h-4 w-4 mr-2" /> Account & Preferences
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate('/play')}>
           <Flag className="h-4 w-4 mr-2" /> My Game

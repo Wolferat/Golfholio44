@@ -1,0 +1,38 @@
+{
+  "name": "AvatarUpload",
+  "type": "object",
+  "properties": {
+    "file_uri": {
+      "type": "string",
+      "description": "Private file URI from UploadPrivateFile \u2014 the avatar this upload tracks."
+    },
+    "uploaded_by_id": {
+      "type": "string",
+      "description": "The user who uploaded this private file. Set by savePlayerProfile (service role) to track ownership."
+    }
+  },
+  "required": [
+    "file_uri",
+    "uploaded_by_id"
+  ],
+  "rls": {
+    "read": {
+      "data.uploaded_by_id": "{{user.id}}"
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
