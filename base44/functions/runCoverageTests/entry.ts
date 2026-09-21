@@ -208,6 +208,8 @@ export default async function (req) {
     starts_at: '2027-01-01T10:00:00Z',
     ends_at: '2027-01-01T18:00:00Z',
     event_timezone: 'America/Chicago',
+    city: 'Test City',
+    venue_name: 'Test Golf Club',
   };
   assert('future event passes tournament policy', evaluateTournamentListing(futureEvent, 33.65, -96.60, 15) !== null);
 

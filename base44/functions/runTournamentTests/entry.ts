@@ -160,8 +160,8 @@ export default async function (req) {
   {
     // Currently live tournament (starts in past, ends in future)
     const live = makeBaseTournament({
-      starts_at: '2026-09-18T08:00:00-05:00',
-      ends_at: '2026-09-20T18:00:00-05:00',
+      starts_at: new Date(Date.now() - 86400000).toISOString(),
+      ends_at: new Date(Date.now() + 86400000).toISOString(),
     });
     add('currently live tournament visible', evaluateTournamentListing(live, playerLat, playerLng, 15) !== null);
   }
