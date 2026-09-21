@@ -32,24 +32,38 @@ export function computeBackoff(retryCount: number): number {
 // Joining an existing request does NOT count against this limit.
 export const PLAYER_MAX_NEW_PER_HOUR = 5;
 
+// Freshness window: reuse completed/empty coverage results for
+// 24 hours before re-queuing the area for fresh discovery. This
+// prevents repeated searches from re-triggering paid discovery
+// while keeping results reasonably current.
+export const FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export function isWithinPlayerRateLimit(recentNewCount: number): boolean {
   return recentNewCount < PLAYER_MAX_NEW_PER_HOUR;
 }
 
 // Safe coverage status for player UI. Strips all internal/audit data.
+// Includes `retryable` so the failed footer card can enable/disable
+// the retry button based on the server-controlled backoff schedule.
 export function safeCoverageStatus(coverage: any): {
   status: string;
   areaLabel: string | null;
   verifiedCount: number;
   areaKey: string | null;
+  retryable: boolean;
 } {
   if (!coverage) {
-    return { status: 'none', areaLabel: null, verifiedCount: 0, areaKey: null };
+    return { status: 'none', areaLabel: null, verifiedCount: 0, areaKey: null, retryable: false };
   }
+  const retryable = coverage.status === 'failed' && (
+    !coverage.next_eligible_at ||
+    new Date(coverage.next_eligible_at).getTime() <= Date.now()
+  );
   return {
     status: coverage.status || 'none',
     areaLabel: coverage.area_label || null,
     verifiedCount: coverage.verified_count || 0,
     areaKey: coverage.area_key || null,
+    retryable,
   };
 }

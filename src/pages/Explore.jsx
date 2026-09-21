@@ -11,7 +11,8 @@ import LiveTicker from '@/components/golf/LiveTicker';
 import LocationSheet from '@/components/golf/LocationSheet';
 import LocationChoicePrompt from '@/components/golf/LocationChoicePrompt';
 import ExploreEmptyState from '@/components/golf/ExploreEmptyState';
-import CoverageStatusBanner from '@/components/golf/CoverageStatusBanner';
+import CoverageNotice from '@/components/golf/CoverageNotice';
+import CoverageFooterCard from '@/components/golf/CoverageFooterCard';
 import AccountMenu from '@/components/golf/AccountMenu';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
@@ -43,7 +44,8 @@ export default function Explore() {
   const [saved, setSaved] = useState(new Set());
   const [tournaments, setTournaments] = useState([]);
   const [coverage, setCoverage] = useState(null);
-  const refreshedFor = useRef('');
+  const [dismissedAreaKey, setDismissedAreaKey] = useState(null);
+  const [retrying, setRetrying] = useState(false);
   const loc = useGolfLocation();
   const initials = (user?.full_name || user?.email || '?').slice(0, 2).toUpperCase();
 
@@ -55,24 +57,29 @@ export default function Explore() {
   }, [loc.sheetOpen, setHidden]);
 
   // Location is required before any player-facing query runs.
-  // Pass the radius so the server can validate (15 default, 30 max).
   const locParam = loc.coords
     ? { lat: loc.coords.lat, lng: loc.coords.lng, radius: loc.radius }
     : (loc.city ? { near: loc.city, radius: loc.radius } : null);
 
+  // Stable key for the selected location + radius. Used to separate
+  // coverage requests (which should only fire on location change) from
+  // listing loads (which fire on every query/category/location change).
+  const locKey = loc.coords
+    ? `${loc.coords.lat.toFixed(4)},${loc.coords.lng.toFixed(4)},${loc.radius}`
+    : (loc.city ? `${loc.city},${loc.radius}` : '');
+
+  // Listings load — does NOT block on coverage. Existing verified
+  // listings render immediately while coverage work happens separately.
   const load = useCallback(async () => {
     if (!locParam) {
       setItems([]);
       setTournaments([]);
-      setCoverage(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
       if (category === 'tournament') {
-        // Tournament search mode — dedicated server endpoint with
-        // tournament-specific policy (dates, expiration, source-backed)
         const [data, tour] = await Promise.all([
           query ? searchTournaments(query, locParam) : getTournaments(locParam),
           getLiveTournaments(locParam),
@@ -91,28 +98,90 @@ export default function Explore() {
       setItems([]);
     }
     setLoading(false);
-    // Request coverage for this area (creates or joins deduped request)
-    requestCoverage(locParam).then(setCoverage).catch(() => {});
   }, [category, query, loc.coords, loc.city, loc.radius]);
+
+  // Ref so the polling effect can call load without depending on it
+  // (avoids resetting the poll schedule on every query/category change).
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (isAuthed) getSavedIds().then(setSaved).catch(() => {}); }, [isAuthed]);
 
-  // Poll coverage status while discovery is in progress
+  // Coverage request — fires only when the location changes, not on
+  // every query/category change. This ensures many player searches for
+  // the same area join one deduped server-side coverage job and never
+  // start duplicates or repeat paid discovery.
   useEffect(() => {
-    if (!coverage || (coverage.status !== 'queued' && coverage.status !== 'checking')) return;
-    if (!locParam) return;
-    const interval = setInterval(async () => {
+    if (!locParam) { setCoverage(null); setDismissedAreaKey(null); return; }
+    let cancelled = false;
+    setDismissedAreaKey(null);
+    requestCoverage(locParam)
+      .then((res) => { if (!cancelled) setCoverage(res); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locKey]);
+
+  // Bounded, visibility-aware polling with backoff.
+  // Stops when: complete, empty, failed, dismissed, or location changes.
+  // Does NOT poll every 15s indefinitely — starts at 5s, backs off by
+  // 1.5x up to 30s, caps at 12 polls (~2.5 min), pauses when tab hidden.
+  const shouldPoll = coverage &&
+    (coverage.status === 'queued' || coverage.status === 'checking') &&
+    coverage.areaKey !== dismissedAreaKey;
+  const pollKey = shouldPoll ? coverage.areaKey : null;
+
+  useEffect(() => {
+    if (!pollKey || !locParam) return;
+    let cancelled = false;
+    let timeoutId = null;
+    let pollCount = 0;
+    const INITIAL_POLL_MS = 5000;
+    const MAX_POLL_MS = 30000;
+    const MAX_POLLS = 12;
+
+    const poll = async () => {
+      if (cancelled) return;
+      if (document.hidden) {
+        timeoutId = setTimeout(poll, 3000);
+        return;
+      }
       try {
         const status = await getCoverageStatus(locParam);
+        if (cancelled) return;
         setCoverage(status);
         if (status.status === 'complete' || status.status === 'empty' || status.status === 'failed') {
-          load();
+          loadRef.current();
+          return; // stop polling
         }
       } catch {}
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [coverage?.status, locParam]);
+      pollCount++;
+      if (pollCount >= MAX_POLLS) return;
+      const delay = Math.min(INITIAL_POLL_MS * Math.pow(1.5, pollCount), MAX_POLL_MS);
+      timeoutId = setTimeout(poll, delay);
+    };
+
+    timeoutId = setTimeout(poll, INITIAL_POLL_MS);
+    return () => { cancelled = true; if (timeoutId) clearTimeout(timeoutId); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollKey, locKey]);
+
+  const handleDismissNotice = useCallback(() => {
+    if (coverage?.areaKey) setDismissedAreaKey(coverage.areaKey);
+  }, [coverage?.areaKey]);
+
+  const handleRetry = useCallback(async () => {
+    if (!locParam) return;
+    setRetrying(true);
+    try {
+      const res = await requestCoverage(locParam);
+      setCoverage(res);
+      setDismissedAreaKey(null);
+    } catch {}
+    setRetrying(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locKey]);
 
   const handleToggleSave = async (id) => {
     if (!isAuthed) { gate(); return; }
@@ -123,6 +192,15 @@ export default function Explore() {
       return next;
     });
   };
+
+  // Compact notice: only for queued/checking, dismissed per areaKey.
+  const showNotice = coverage &&
+    (coverage.status === 'queued' || coverage.status === 'checking') &&
+    coverage.areaKey !== dismissedAreaKey;
+
+  // Quiet footer card: queued/checking/failed. Never resembles a listing.
+  const showFooter = coverage &&
+    (coverage.status === 'queued' || coverage.status === 'checking' || coverage.status === 'failed');
 
   return (
     <div className="night-glow">
@@ -139,7 +217,10 @@ export default function Explore() {
         </div>
       </GlassHeader>
 
-      <PullToRefresh onRefresh={load}>
+      <PullToRefresh onRefresh={async () => {
+        await load();
+        if (locParam) getCoverageStatus(locParam).then(setCoverage).catch(() => {});
+      }}>
         <NightHero
           locationLabel={loc.label}
           subtitle={loc.subtitle}
@@ -221,29 +302,29 @@ export default function Explore() {
                 <VenueDeckSkeleton />
               ) : items.length === 0 ? (
                 <>
-                  {coverage && (coverage.status === 'queued' || coverage.status === 'checking' || coverage.status === 'failed') && (
-                    <CoverageStatusBanner
+                  {category === 'tournament' ? (
+                    <TournamentEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
+                  ) : (
+                    <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
+                  )}
+                  {showFooter && (
+                    <CoverageFooterCard
                       status={coverage.status}
                       areaLabel={loc.label}
-                      hasResults={false}
+                      onRetry={handleRetry}
+                      retrying={retrying}
                     />
-                  )}
-                  {(!coverage || (coverage.status !== 'queued' && coverage.status !== 'checking')) && (
-                    category === 'tournament' ? (
-                      <TournamentEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
-                    ) : (
-                      <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
-                    )
                   )}
                 </>
               ) : (
                 <>
-                  {coverage && (coverage.status === 'queued' || coverage.status === 'checking') && (
-                    <CoverageStatusBanner
-                      status={coverage.status}
-                      areaLabel={loc.label}
-                      hasResults={true}
-                    />
+                  {showNotice && (
+                    <div className="mb-3">
+                      <CoverageNotice
+                        areaLabel={loc.label}
+                        onDismiss={handleDismissNotice}
+                      />
+                    </div>
                   )}
                   <div className="grid grid-cols-1 gap-3.5">
                     {items.map((item, i) => (
@@ -268,6 +349,14 @@ export default function Explore() {
                       )
                     ))}
                   </div>
+                  {showFooter && (
+                    <CoverageFooterCard
+                      status={coverage.status}
+                      areaLabel={loc.label}
+                      onRetry={handleRetry}
+                      retrying={retrying}
+                    />
+                  )}
                 </>
               )}
             </section>

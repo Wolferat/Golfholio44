@@ -28,6 +28,7 @@ import { computeBackoff } from '../../shared/coverageArea.ts';
 // ============================================================
 
 const MAX_CANDIDATES = 20;
+const CONCURRENCY = 3;
 
 function getCityState(components: any[]): { city: string; state: string } {
   const city = components?.find((c) => c.types?.includes('locality'))?.long_name ||
@@ -69,6 +70,104 @@ Rules:
   } catch {
     return null;
   }
+}
+
+// Process a single candidate with the full verification contract.
+// Returns { accepted, placeId, name, reason } so the caller can
+// aggregate results without shared mutable state during parallel
+// execution.
+async function processCandidate(base44: any, googleKey: string, placeId: string, info: any, existingListings: any[], coverageId: string) {
+  const det = await placeDetails(googleKey, placeId).catch(() => null);
+  if (!det) {
+    return { accepted: false, placeId, name: null, reason: 'place details fetch failed' };
+  }
+
+  const golfCheck = isGolfRelated(det);
+  if (!golfCheck.isGolf) {
+    return { accepted: false, placeId, name: det.name, reason: `not golf-related: ${golfCheck.reason}` };
+  }
+
+  const website = det.website;
+  if (!website || !isTrustedSourceUrl(website)) {
+    return { accepted: false, placeId, name: det.name, reason: 'no trusted official website' };
+  }
+
+  const sourceCheck = await validatePublicUrl(website);
+  if (!sourceCheck.valid) {
+    return { accepted: false, placeId, name: det.name, reason: `source URL blocked: ${sourceCheck.reason}` };
+  }
+
+  const { city, state } = getCityState(det.address_components);
+  const candidateRecord = {
+    name: det.name,
+    type: info.type,
+    place_id: placeId,
+    website,
+    address: det.formatted_address || '',
+    city,
+    latitude: det.geometry?.location?.lat,
+    longitude: det.geometry?.location?.lng,
+  };
+
+  const dupCheck = isDuplicate(candidateRecord, existingListings);
+  if (dupCheck.isDup) {
+    return { accepted: false, placeId, name: det.name, reason: `duplicate: ${dupCheck.reason}` };
+  }
+
+  const corroboration = await corroborateSourceUrl(website, {
+    name: det.name,
+    city,
+    address: det.formatted_address || '',
+    phone: det.formatted_phone_number || '',
+  });
+
+  if (!corroboration.corroborated) {
+    return { accepted: false, placeId, name: det.name, reason: `source not corroborated: ${corroboration.reason}` };
+  }
+
+  const llmResult = await classifyWithLLM(base44, det);
+  if (!llmResult || !llmResult.is_golf) {
+    return { accepted: false, placeId, name: det.name, reason: llmResult?.reason || 'LLM classified as non-golf' };
+  }
+
+  const category = ['course', 'simulator', 'training', 'golf_related_venue'].includes(llmResult.category)
+    ? llmResult.category
+    : info.type;
+
+  const now = new Date().toISOString();
+  await base44.asServiceRole.entities.Listing.create({
+    name: det.name,
+    type: category,
+    venue_name: det.name,
+    city,
+    state,
+    address: det.formatted_address || '',
+    latitude: det.geometry?.location?.lat ?? null,
+    longitude: det.geometry?.location?.lng ?? null,
+    phone: det.formatted_phone_number || '',
+    website,
+    official_website: website,
+    description: '',
+    photos: [],
+    rating: typeof det.rating === 'number' ? det.rating : null,
+    place_id: placeId,
+    status: 'approved',
+    source_url: website,
+    source_type: 'official_website',
+    ingestion_source: 'coverage_discovery',
+    ingestion_job_id: coverageId,
+    verification_tier: 2,
+    verification_notes: `Automated: ${llmResult.reason}. Source corroborated: ${corroboration.reason}`,
+    verified_at: now,
+    verified_by: 'coverage_discovery',
+    golf_verified: true,
+    golf_verified_at: now,
+    golf_verified_by: 'coverage_discovery',
+    photo_verified: false,
+    is_professional_tournament: false,
+  });
+
+  return { accepted: true, placeId, name: det.name };
 }
 
 async function processCoverageRequest(base44: any, coverage: any) {
@@ -118,115 +217,25 @@ async function processCoverageRequest(base44: any, coverage: any) {
     // Step 2: Get existing listings for dedup
     const existingListings = await base44.asServiceRole.entities.Listing.filter({}).catch(() => []);
 
-    // Step 3: Process each candidate (max 20)
+    // Step 3: Process candidates with bounded parallelism (max 20,
+    // concurrency 3). Each candidate runs the full verification
+    // contract independently — no checks are skipped or weakened.
     const candidates = Array.from(seen.entries()).slice(0, MAX_CANDIDATES);
 
-    for (const [placeId, info] of candidates) {
-      const det = await placeDetails(googleKey, placeId).catch(() => null);
-      if (!det) {
-        exclusionReasons.push({ place_id: placeId, reason: 'place details fetch failed' });
-        continue;
+    for (let i = 0; i < candidates.length; i += CONCURRENCY) {
+      const batch = candidates.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(([placeId, info]) =>
+          processCandidate(base44, googleKey, placeId, info, existingListings, coverageId)
+        )
+      );
+      for (const r of results) {
+        if (r.accepted) {
+          acceptedCount++;
+        } else {
+          exclusionReasons.push({ place_id: r.placeId, name: r.name, reason: r.reason });
+        }
       }
-
-      // Check golf-related (structured evidence from Google Places types + name)
-      const golfCheck = isGolfRelated(det);
-      if (!golfCheck.isGolf) {
-        exclusionReasons.push({ place_id: placeId, name: det.name, reason: `not golf-related: ${golfCheck.reason}` });
-        continue;
-      }
-
-      // Check for trusted official website
-      const website = det.website;
-      if (!website || !isTrustedSourceUrl(website)) {
-        exclusionReasons.push({ place_id: placeId, name: det.name, reason: 'no trusted official website' });
-        continue;
-      }
-
-      // SSRF validation
-      const sourceCheck = await validatePublicUrl(website);
-      if (!sourceCheck.valid) {
-        exclusionReasons.push({ place_id: placeId, name: det.name, reason: `source URL blocked: ${sourceCheck.reason}` });
-        continue;
-      }
-
-      const { city, state } = getCityState(det.address_components);
-      const candidateRecord = {
-        name: det.name,
-        type: info.type,
-        place_id: placeId,
-        website,
-        address: det.formatted_address || '',
-        city,
-        latitude: det.geometry?.location?.lat,
-        longitude: det.geometry?.location?.lng,
-      };
-
-      // Dedup against existing listings
-      const dupCheck = isDuplicate(candidateRecord, existingListings);
-      if (dupCheck.isDup) {
-        exclusionReasons.push({ place_id: placeId, name: det.name, reason: `duplicate: ${dupCheck.reason}` });
-        continue;
-      }
-
-      // Corroborate source page (name + stable facts, SSRF-hardened)
-      const corroboration = await corroborateSourceUrl(website, {
-        name: det.name,
-        city,
-        address: det.formatted_address || '',
-        phone: det.formatted_phone_number || '',
-      });
-
-      if (!corroboration.corroborated) {
-        exclusionReasons.push({ place_id: placeId, name: det.name, reason: `source not corroborated: ${corroboration.reason}` });
-        continue;
-      }
-
-      // LLM classification — evidence only, never invents
-      const llmResult = await classifyWithLLM(base44, det);
-      if (!llmResult || !llmResult.is_golf) {
-        exclusionReasons.push({ place_id: placeId, name: det.name, reason: llmResult?.reason || 'LLM classified as non-golf' });
-        continue;
-      }
-
-      const category = ['course', 'simulator', 'training', 'golf_related_venue'].includes(llmResult.category)
-        ? llmResult.category
-        : info.type;
-
-      // Create APPROVED listing — every permanent policy condition satisfied
-      const now = new Date().toISOString();
-      await base44.asServiceRole.entities.Listing.create({
-        name: det.name,
-        type: category,
-        venue_name: det.name,
-        city,
-        state,
-        address: det.formatted_address || '',
-        latitude: det.geometry?.location?.lat ?? null,
-        longitude: det.geometry?.location?.lng ?? null,
-        phone: det.formatted_phone_number || '',
-        website,
-        official_website: website,
-        description: '',
-        photos: [],
-        rating: typeof det.rating === 'number' ? det.rating : null,
-        place_id: placeId,
-        status: 'approved',
-        source_url: website,
-        source_type: 'official_website',
-        ingestion_source: 'coverage_discovery',
-        ingestion_job_id: coverageId,
-        verification_tier: 2,
-        verification_notes: `Automated: ${llmResult.reason}. Source corroborated: ${corroboration.reason}`,
-        verified_at: now,
-        verified_by: 'coverage_discovery',
-        golf_verified: true,
-        golf_verified_at: now,
-        golf_verified_by: 'coverage_discovery',
-        photo_verified: false,
-        is_professional_tournament: false,
-      });
-
-      acceptedCount++;
     }
 
     // Count verified listings in area

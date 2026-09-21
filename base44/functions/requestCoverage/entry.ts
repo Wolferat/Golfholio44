@@ -1,7 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
 import { geocode, haversineMi } from '../../shared/googlePlaces.ts';
-import { areaKey, isWithinPlayerRateLimit, safeCoverageStatus } from '../../shared/coverageArea.ts';
+import { areaKey, isWithinPlayerRateLimit, safeCoverageStatus, FRESHNESS_WINDOW_MS } from '../../shared/coverageArea.ts';
 
 // ============================================================
 // requestCoverage — player-facing.
@@ -74,11 +74,35 @@ export default async function (req) {
 
     let coverage;
     if (existing.length > 0) {
-      // Join existing — increment request_count (dedup)
+      // Join existing — increment request_count (dedup).
+      // Freshness window: re-queue stale completed/empty results so
+      // the area gets fresh discovery after 24h. Failed requests are
+      // re-queued only after the server-controlled backoff expires.
       coverage = existing[0];
-      await base44.asServiceRole.entities.CoverageRequest.update(coverage.id, {
+      const updates: any = {
         request_count: (coverage.request_count || 1) + 1,
-      }).catch(() => {});
+      };
+
+      if (coverage.status === 'complete' || coverage.status === 'empty') {
+        const lastCompleted = coverage.last_completed_at
+          ? new Date(coverage.last_completed_at).getTime()
+          : 0;
+        if (Date.now() - lastCompleted > FRESHNESS_WINDOW_MS) {
+          updates.status = 'queued';
+          updates.retry_count = (coverage.retry_count || 0) + 1;
+        }
+      } else if (coverage.status === 'failed') {
+        const eligible = coverage.next_eligible_at
+          ? new Date(coverage.next_eligible_at).getTime()
+          : 0;
+        if (Date.now() >= eligible) {
+          updates.status = 'queued';
+        }
+      }
+
+      await base44.asServiceRole.entities.CoverageRequest.update(coverage.id, updates)
+        .catch(() => {});
+      coverage = { ...coverage, ...updates };
     } else {
       // Count currently verified listings in this area for immediate display
       const allApproved = await base44.asServiceRole.entities.Listing

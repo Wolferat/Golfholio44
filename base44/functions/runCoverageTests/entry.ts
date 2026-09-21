@@ -5,6 +5,7 @@ import {
   isWithinPlayerRateLimit,
   safeCoverageStatus,
   PLAYER_MAX_NEW_PER_HOUR,
+  FRESHNESS_WINDOW_MS,
 } from '../../shared/coverageArea.ts';
 import {
   checkPublicListing,
@@ -117,6 +118,7 @@ export default async function (req) {
   assert('safe status includes areaLabel', safeFull.areaLabel === 'Sherman, TX');
   assert('safe status includes verifiedCount', safeFull.verifiedCount === 3);
   assert('safe status includes areaKey', safeFull.areaKey === 'us-33.7--96.6');
+  assert('safe status includes retryable', safeFull.retryable === false);
   assert('safe status excludes exclusion_reasons', !('exclusion_reasons' in safeFull));
   assert('safe status excludes error_message', !('error_message' in safeFull));
   assert('safe status excludes requested_by_id', !('requested_by_id' in safeFull));
@@ -304,10 +306,31 @@ export default async function (req) {
 
   // --- 24. Safe status is the only player-facing response ---
   const allKeys = Object.keys(safeFull);
-  const expectedKeys = ['status', 'areaLabel', 'verifiedCount', 'areaKey'];
-  assert('safe status has exactly 4 keys', allKeys.length === 4, `got ${allKeys.join(',')}`);
+  const expectedKeys = ['status', 'areaLabel', 'verifiedCount', 'areaKey', 'retryable'];
+  assert('safe status has exactly 5 keys', allKeys.length === 5, `got ${allKeys.join(',')}`);
   assert('safe status keys are correct',
     expectedKeys.every((k) => allKeys.includes(k)) && allKeys.every((k) => expectedKeys.includes(k)));
+
+  // --- 25. retryable flag for failed coverage ---
+  const failedEligible = safeCoverageStatus({
+    status: 'failed', area_label: 'Test, TX', verified_count: 0, area_key: 'test',
+    next_eligible_at: new Date(Date.now() - 1000).toISOString(),
+  });
+  assert('failed coverage past next_eligible_at is retryable', failedEligible.retryable === true);
+
+  const failedNotEligible = safeCoverageStatus({
+    status: 'failed', area_label: 'Test, TX', verified_count: 0, area_key: 'test',
+    next_eligible_at: new Date(Date.now() + 60000).toISOString(),
+  });
+  assert('failed coverage before next_eligible_at is not retryable', failedNotEligible.retryable === false);
+
+  const failedNoEligible = safeCoverageStatus({
+    status: 'failed', area_label: 'Test, TX', verified_count: 0, area_key: 'test',
+  });
+  assert('failed coverage with no next_eligible_at is retryable', failedNoEligible.retryable === true);
+
+  // --- 26. Freshness window constant exists ---
+  assert('freshness window is 24 hours', FRESHNESS_WINDOW_MS === 24 * 60 * 60 * 1000);
 
   return Response.json({
     total: tests.length,
