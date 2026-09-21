@@ -11,10 +11,11 @@ import LiveTicker from '@/components/golf/LiveTicker';
 import LocationSheet from '@/components/golf/LocationSheet';
 import LocationChoicePrompt from '@/components/golf/LocationChoicePrompt';
 import ExploreEmptyState from '@/components/golf/ExploreEmptyState';
+import CoverageStatusBanner from '@/components/golf/CoverageStatusBanner';
 import AccountMenu from '@/components/golf/AccountMenu';
 import GlassHeader from '@/components/golf/GlassHeader';
 import PullToRefresh from '@/components/golf/PullToRefresh';
-import { getListings, searchListings, getTournaments, searchTournaments, toggleFavorite, getSavedIds, getLiveTournaments } from '@/lib/golfData';
+import { getListings, searchListings, getTournaments, searchTournaments, toggleFavorite, getSavedIds, getLiveTournaments, requestCoverage, getCoverageStatus } from '@/lib/golfData';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
 import { useGate } from '@/components/golf/GateProvider';
@@ -41,6 +42,7 @@ export default function Explore() {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(new Set());
   const [tournaments, setTournaments] = useState([]);
+  const [coverage, setCoverage] = useState(null);
   const refreshedFor = useRef('');
   const loc = useGolfLocation();
   const initials = (user?.full_name || user?.email || '?').slice(0, 2).toUpperCase();
@@ -62,6 +64,7 @@ export default function Explore() {
     if (!locParam) {
       setItems([]);
       setTournaments([]);
+      setCoverage(null);
       setLoading(false);
       return;
     }
@@ -88,10 +91,28 @@ export default function Explore() {
       setItems([]);
     }
     setLoading(false);
+    // Request coverage for this area (creates or joins deduped request)
+    requestCoverage(locParam).then(setCoverage).catch(() => {});
   }, [category, query, loc.coords, loc.city, loc.radius]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (isAuthed) getSavedIds().then(setSaved).catch(() => {}); }, [isAuthed]);
+
+  // Poll coverage status while discovery is in progress
+  useEffect(() => {
+    if (!coverage || (coverage.status !== 'queued' && coverage.status !== 'checking')) return;
+    if (!locParam) return;
+    const interval = setInterval(async () => {
+      try {
+        const status = await getCoverageStatus(locParam);
+        setCoverage(status);
+        if (status.status === 'complete' || status.status === 'empty' || status.status === 'failed') {
+          load();
+        }
+      } catch {}
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [coverage?.status, locParam]);
 
   const handleToggleSave = async (id) => {
     if (!isAuthed) { gate(); return; }
@@ -199,35 +220,55 @@ export default function Explore() {
               {loading ? (
                 <VenueDeckSkeleton />
               ) : items.length === 0 ? (
-                category === 'tournament' ? (
-                  <TournamentEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
-                ) : (
-                  <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
-                )
-              ) : (
-                <div className="grid grid-cols-1 gap-3.5">
-                  {items.map((item, i) => (
+                <>
+                  {coverage && (coverage.status === 'queued' || coverage.status === 'checking' || coverage.status === 'failed') && (
+                    <CoverageStatusBanner
+                      status={coverage.status}
+                      areaLabel={loc.label}
+                      hasResults={false}
+                    />
+                  )}
+                  {(!coverage || (coverage.status !== 'queued' && coverage.status !== 'checking')) && (
                     category === 'tournament' ? (
-                      <TournamentCard
-                        key={item.id}
-                        item={item}
-                        index={i}
-                        saved={saved.has(item.id)}
-                        onToggleSave={() => handleToggleSave(item.id)}
-                        onOpen={() => navigate('/listing/' + item.id)}
-                      />
+                      <TournamentEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
                     ) : (
-                      <VenueCard
-                        key={item.id}
-                        item={item}
-                        index={i}
-                        saved={saved.has(item.id)}
-                        onToggleSave={() => handleToggleSave(item.id)}
-                        onOpen={() => navigate('/listing/' + item.id)}
-                      />
+                      <ExploreEmptyState onChangeLocation={() => loc.setSheetOpen(true)} />
                     )
-                  ))}
-                </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {coverage && (coverage.status === 'queued' || coverage.status === 'checking') && (
+                    <CoverageStatusBanner
+                      status={coverage.status}
+                      areaLabel={loc.label}
+                      hasResults={true}
+                    />
+                  )}
+                  <div className="grid grid-cols-1 gap-3.5">
+                    {items.map((item, i) => (
+                      category === 'tournament' ? (
+                        <TournamentCard
+                          key={item.id}
+                          item={item}
+                          index={i}
+                          saved={saved.has(item.id)}
+                          onToggleSave={() => handleToggleSave(item.id)}
+                          onOpen={() => navigate('/listing/' + item.id)}
+                        />
+                      ) : (
+                        <VenueCard
+                          key={item.id}
+                          item={item}
+                          index={i}
+                          saved={saved.has(item.id)}
+                          onToggleSave={() => handleToggleSave(item.id)}
+                          onOpen={() => navigate('/listing/' + item.id)}
+                        />
+                      )
+                    ))}
+                  </div>
+                </>
               )}
             </section>
           </>

@@ -111,6 +111,19 @@ export async function resolveLocation(params) {
 }
 
 // ============================================================
+// Coverage — server-controlled, deduplicated area coverage
+// ============================================================
+export async function requestCoverage(loc = {}) {
+  const res = await base44.functions.invoke('requestCoverage', loc);
+  return res.data;
+}
+
+export async function getCoverageStatus(loc = {}) {
+  const res = await base44.functions.invoke('getCoverageStatus', loc);
+  return res.data;
+}
+
+// ============================================================
 // Player Profile — public profile management
 // ============================================================
 export async function getMyProfileEntity() {

@@ -2,9 +2,21 @@
   "name": "CoverageRequest",
   "type": "object",
   "properties": {
+    "area_key": {
+      "type": "string",
+      "description": "Normalized geographic area key for deduplication (e.g. 'us-33.7--96.6'). Many players searching the same area share one request."
+    },
     "area_label": {
       "type": "string",
-      "description": "Human-readable area description (e.g. 'Sherman, TX' or '75mi around Dallas, TX')"
+      "description": "Human-readable area description (e.g. 'Sherman, TX')"
+    },
+    "canonical_city": {
+      "type": "string",
+      "description": "Canonical city name resolved from geocoding"
+    },
+    "canonical_state": {
+      "type": "string",
+      "description": "Canonical state abbreviation resolved from geocoding"
     },
     "latitude": {
       "type": "number",
@@ -22,20 +34,48 @@
     "status": {
       "type": "string",
       "enum": [
-        "pending",
-        "processing",
-        "completed",
+        "queued",
+        "checking",
+        "complete",
+        "empty",
         "failed"
       ],
-      "default": "pending"
+      "default": "queued",
+      "description": "queued = waiting for discovery, checking = discovery in progress, complete = done with verified results, empty = done with no verified results, failed = error"
     },
     "requested_by_id": {
       "type": "string",
-      "description": "User ID who requested coverage, or 'system' for scheduled runs"
+      "description": "User ID who first requested coverage, or 'system' for scheduled runs"
+    },
+    "first_requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this area was first requested"
     },
     "last_run_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "When discovery last ran for this area"
+    },
+    "last_completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When discovery last completed for this area"
+    },
+    "retry_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of discovery attempts (used for exponential backoff)"
+    },
+    "next_eligible_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Earliest time this area can be re-checked (rate limit / backoff)"
+    },
+    "request_count": {
+      "type": "number",
+      "default": 1,
+      "description": "How many players have requested coverage for this area"
     },
     "result_count": {
       "type": "number",
@@ -45,11 +85,20 @@
     "accepted_count": {
       "type": "number",
       "default": 0,
-      "description": "Number of candidates that passed validation and were created as pending listings"
+      "description": "Number of candidates that passed full verification and were created as approved listings"
+    },
+    "verified_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of currently verified listings in this coverage area (for UI display)"
+    },
+    "source_provenance_summary": {
+      "type": "string",
+      "description": "Safe summary of source types used (e.g. 'google_places+official_website'). No internal details."
     },
     "exclusion_reasons": {
       "type": "string",
-      "description": "JSON array of private exclusion reasons for rejected candidates"
+      "description": "JSON array of private exclusion reasons for rejected candidates. Admin-only \u2014 never exposed to players."
     },
     "error_message": {
       "type": "string",
@@ -57,6 +106,7 @@
     }
   },
   "required": [
+    "area_key",
     "area_label",
     "latitude",
     "longitude"
