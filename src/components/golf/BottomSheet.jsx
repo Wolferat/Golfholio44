@@ -13,7 +13,7 @@ export default function BottomSheet({ open, onClose, children, maxHeight = '88dv
             onClick={onClose}
           />
           <motion.div
-            className="relative w-full max-w-2xl mt-auto bg-card rounded-t-[24px] border-t border-border overflow-y-auto no-scrollbar"
+            className="relative w-full max-w-2xl mt-auto bg-card rounded-t-[24px] border-t border-border overflow-y-auto no-scrollbar pb-[calc(12px+env(safe-area-inset-bottom))]"
             style={{ maxHeight }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}

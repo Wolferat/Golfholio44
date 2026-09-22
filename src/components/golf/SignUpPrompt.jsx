@@ -7,7 +7,7 @@ export default function SignUpPrompt({ open, onClose }) {
   const navigate = useNavigate();
   return (
     <BottomSheet open={open} onClose={onClose} maxHeight="60dvh">
-      <div className="p-5 pb-8">
+      <div className="p-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
         <div className="mx-auto h-12 w-12 rounded-2xl bg-primary/15 border border-primary/30 grid place-items-center mb-3">
           <Sparkles className="h-6 w-6 text-primary" />
         </div>

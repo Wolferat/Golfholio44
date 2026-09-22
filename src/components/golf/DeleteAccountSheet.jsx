@@ -31,7 +31,7 @@ export default function DeleteAccountSheet({ open, onClose }) {
 
   return (
     <BottomSheet open={open} onClose={handleClose}>
-      <div className="p-5 pb-8">
+      <div className="p-5 pb-[calc(12px+env(safe-area-inset-bottom))]">
         <div className="flex items-center gap-3 mb-4">
           <div className="h-11 w-11 rounded-full bg-destructive/15 grid place-items-center shrink-0">
             <AlertTriangle className="h-5 w-5 text-destructive" />

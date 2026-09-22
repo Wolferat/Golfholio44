@@ -68,7 +68,7 @@ export default function ListingDetail({ item, saved, onToggleSave, onClose }) {
             </div>
           </div>
 
-          <div className="sticky bottom-0 glass border-t border-border p-3 grid grid-cols-3 gap-2">
+          <div className="sticky bottom-0 glass border-t border-border p-3 pb-[calc(12px+env(safe-area-inset-bottom))] grid grid-cols-3 gap-2">
             <a href={directionsUrl} target="_blank" rel="noreferrer">
               <Button variant="secondary" className="h-12 w-full"><Navigation className="h-4 w-4" />Directions</Button>
             </a>
