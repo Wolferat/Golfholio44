@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import { MapPin, Bell, ShieldCheck, Mail, Lock, User, ChevronLeft, Check } from 'lucide-react';
 import { buildLabel } from '@/lib/buildInfo';
+import { getNotificationPreference, setNotificationPreference } from '@/lib/golfData';
 
 // ============================================================
 // Settings (Account & Preferences) — private account fields.
@@ -32,6 +33,8 @@ export default function Settings() {
   const [notifications, setNotifications] = useState(true);
   const [privacy, setPrivacy] = useState(true);
   const [displayNamePref, setDisplayNamePref] = useState('username');
+  const [pushPref, setPushPref] = useState(false);
+  const [pushSaving, setPushSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -46,9 +49,26 @@ export default function Settings() {
         setPrivacy(me.privacy !== false);
         setDisplayNamePref(me.display_name_preference || 'username');
       } catch {}
+      try {
+        const pref = await getNotificationPreference();
+        setPushPref(!!pref.push_enabled);
+      } catch {}
       setLoading(false);
     })();
   }, []);
+
+  const handlePushToggle = async (value) => {
+    setPushPref(value);
+    setPushSaving(true);
+    try {
+      await setNotificationPreference(value);
+      toast({ title: value ? 'Push notifications enabled' : 'Push notifications disabled' });
+    } catch {
+      setPushPref(!value);
+      toast({ title: 'Could not update preference' });
+    }
+    setPushSaving(false);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -141,6 +161,13 @@ export default function Settings() {
           <div className="flex items-center justify-between rounded-xl bg-card border border-border p-3.5">
             <span className="text-sm">Round and tee-time reminders</span>
             <Switch checked={notifications} onCheckedChange={setNotifications} />
+          </div>
+          <div className="flex items-center justify-between rounded-xl bg-card border border-border p-3.5">
+            <div>
+              <div className="text-sm">Push notifications</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Get notified when verified golf is found near you. Opt-in only — we'll never ask on launch or signup.</div>
+            </div>
+            <Switch checked={pushPref} onCheckedChange={handlePushToggle} disabled={pushSaving} />
           </div>
         </section>
 

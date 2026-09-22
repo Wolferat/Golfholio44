@@ -1,0 +1,82 @@
+{
+  "name": "PlayerNotification",
+  "type": "object",
+  "properties": {
+    "target_user_id": {
+      "type": "string",
+      "description": "The player this notification belongs to. Set by the service role (runCoverageDiscovery). Only this player can read, mark-read, or clear it."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "coverage_complete",
+        "coverage_empty",
+        "coverage_failed"
+      ],
+      "description": "Notification category."
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "area_key": {
+      "type": "string",
+      "description": "Normalized area key for dedup and deep-link context."
+    },
+    "city": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "deep_link": {
+      "type": "string",
+      "description": "App route to open when tapped (e.g. /?near=Sherman,TX). Opens a policy-gated feed."
+    },
+    "read": {
+      "type": "boolean",
+      "default": false
+    },
+    "dedup_key": {
+      "type": "string",
+      "description": "coverage:{area_key}:{terminal_status} \u2014 used with result_hash to suppress duplicate notifications."
+    },
+    "result_hash": {
+      "type": "string",
+      "description": "Stable hash of the verified listing IDs at notification time. A changed hash means listings were added/removed and a new notification is warranted."
+    }
+  },
+  "required": [
+    "target_user_id",
+    "type",
+    "title",
+    "body"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.target_user_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "data.target_user_id": "{{user.id}}"
+    },
+    "delete": {
+      "data.target_user_id": "{{user.id}}"
+    }
+  }
+}

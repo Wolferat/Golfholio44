@@ -25,6 +25,7 @@ import Admin from './pages/Admin';
 import ListingPage from './pages/ListingPage';
 import SavedPlaces from './pages/SavedPlaces';
 import Settings from './pages/Settings';
+import Notifications from './pages/Notifications';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -68,6 +69,7 @@ const AuthenticatedApp = () => {
             <Route path="/listing/:id" element={<ListingPage />} />
             <Route path="/saved" element={<SavedPlaces />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/notifications" element={<Notifications />} />
             <Route path="/crew" element={<Crew />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/admin" element={<Admin />} />

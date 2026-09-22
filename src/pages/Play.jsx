@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flag, CalendarClock, ChevronRight } from 'lucide-react';
+import { Flag, CalendarClock, ChevronRight, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
 import GlassHeader from '@/components/golf/GlassHeader';
@@ -9,6 +9,8 @@ import StartScorecard from '@/components/golf/StartScorecard';
 import ScheduleTeeTime from '@/components/golf/ScheduleTeeTime';
 import ScorecardListItem from '@/components/golf/ScorecardListItem';
 import TeeTimeListItem from '@/components/golf/TeeTimeListItem';
+import RoundLogForm from '@/components/golf/RoundLogForm';
+import BottomSheet from '@/components/golf/BottomSheet';
 import { useToast } from '@/components/ui/use-toast';
 import HandicapEstimateCard from '@/components/golf/HandicapEstimateCard';
 
@@ -23,12 +25,13 @@ export default function Play() {
   const [loading, setLoading] = useState(true);
   const [startOpen, setStartOpen] = useState(false);
   const [teeOpen, setTeeOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [c, t] = await Promise.all([
-        base44.entities.Scorecard.list('-created_date', 50),
+        base44.entities.Round.list('-created_date', 50),
         base44.entities.TeeTime.list('-date', 50),
       ]);
       setCards(c);
@@ -43,9 +46,15 @@ export default function Play() {
   useEffect(() => { load(); }, [load]);
 
   const handleCreated = async (data) => {
-    const created = await base44.entities.Scorecard.create({ ...data, status: 'active', scores: {} });
+    const created = await base44.entities.Round.create({ ...data, status: 'active', scores: {} });
     setStartOpen(false);
     navigate(`/play/${created.id}`);
+  };
+
+  const handleLogDone = (round) => {
+    setLogOpen(false);
+    load();
+    toast({ title: 'Round logged' });
   };
 
   const handleTeeCreated = async (data) => {
@@ -74,8 +83,8 @@ export default function Play() {
   const statFor = (holeCount) => {
     const totals = completed
       .filter((c) => c.holes === holeCount)
-      .map((c) => playerTotal(c, c.players?.[0]))
-      .filter((n) => n > 0);
+      .map((c) => c.score)
+      .filter((n) => n != null && n > 0);
     if (!totals.length) return null;
     return {
       rounds: totals.length,
@@ -141,6 +150,11 @@ export default function Play() {
             </motion.button>
           </div>
 
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => setLogOpen(true)}
+            className="w-full h-12 rounded-2xl glass-card border border-border font-semibold flex items-center justify-center gap-2 text-sm">
+            <Plus className="h-4 w-4 text-primary" /> Log a past round
+          </motion.button>
+
           {loading ? (
             <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-20 rounded-2xl shimmer" />)}</div>
           ) : (
@@ -193,6 +207,12 @@ export default function Play() {
 
       <StartScorecard open={startOpen} onClose={() => setStartOpen(false)} onCreated={handleCreated} />
       <ScheduleTeeTime open={teeOpen} onClose={() => setTeeOpen(false)} onCreated={handleTeeCreated} />
+      <BottomSheet open={logOpen} onClose={() => setLogOpen(false)} maxHeight="90dvh">
+        <div className="p-5 pb-nav">
+          <h2 className="text-lg font-bold mb-4">Log a Round</h2>
+          <RoundLogForm onDone={handleLogDone} />
+        </div>
+      </BottomSheet>
     </div>
   );
 }

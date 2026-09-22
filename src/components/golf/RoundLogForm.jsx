@@ -29,6 +29,7 @@ import { Info } from 'lucide-react';
 
 export default function RoundLogForm({ listingId, listingName, round, onDone }) {
   const { toast } = useToast();
+  const [courseName, setCourseName] = useState(round?.course_name || round?.listing_name || '');
   const [date, setDate] = useState(round?.date || new Date().toISOString().slice(0, 10));
   const [holes, setHoles] = useState(round?.holes || 18);
   const [score, setScore] = useState(round?.score != null ? String(round.score) : '');
@@ -39,12 +40,14 @@ export default function RoundLogForm({ listingId, listingName, round, onDone }) 
   const [notes, setNotes] = useState(round?.notes || '');
   const [format, setFormat] = useState(round?.format || '');
   const [saving, setSaving] = useState(false);
+  const isManual = !listingId;
 
   const hasRatings = !!(courseRating && slopeRating);
   const handicapEligible = holes === 18 && hasRatings;
 
   const submit = async () => {
     const scoreNum = Number(score);
+    if (isManual && !courseName.trim()) { toast({ title: 'Course or venue name required' }); return; }
     if (!date) { toast({ title: 'Date required' }); return; }
     if (holes !== 9 && holes !== 18) { toast({ title: 'Select 9 or 18 holes' }); return; }
     if (!Number.isFinite(scoreNum) || scoreNum < 1 || scoreNum > 300) {
@@ -53,8 +56,9 @@ export default function RoundLogForm({ listingId, listingName, round, onDone }) 
     setSaving(true);
     try {
       const res = await base44.functions.invoke('logRound', {
-        listing_id: listingId,
+        listing_id: listingId || undefined,
         listing_name: listingName,
+        course_name: isManual ? courseName.trim() : undefined,
         date,
         holes,
         score: scoreNum,
@@ -76,6 +80,22 @@ export default function RoundLogForm({ listingId, listingName, round, onDone }) 
 
   return (
     <div className="space-y-4">
+      {/* 0. Course/venue name (manual unlinked rounds only) */}
+      {isManual && (
+        <div>
+          <Label className="text-xs font-semibold mb-1.5 block">Course or venue name</Label>
+          <Input
+            value={courseName}
+            onChange={(e) => setCourseName(e.target.value)}
+            placeholder="e.g. Pine Crest Golf Links"
+            className="h-12"
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Unlinked rounds count toward your personal stats but aren't tied to a verified listing.
+          </p>
+        </div>
+      )}
+
       {/* 1. Date played */}
       <div>
         <Label className="text-xs font-semibold mb-1.5 block">Date played</Label>

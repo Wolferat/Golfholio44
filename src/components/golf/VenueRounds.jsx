@@ -19,7 +19,7 @@ export default function VenueRounds({ listingId, listingName }) {
 
   const load = useCallback(async () => {
     try {
-      const list = await base44.entities.RoundLog.filter({ listing_id: listingId }, '-date', 50);
+      const list = await base44.entities.Round.filter({ listing_id: listingId, status: 'completed' }, '-date', 50);
       setRounds(list);
     } catch {
       setRounds([]);
@@ -31,7 +31,7 @@ export default function VenueRounds({ listingId, listingName }) {
 
   const handleDelete = async (id) => {
     try {
-      await base44.entities.RoundLog.delete(id);
+      await base44.entities.Round.delete(id);
       toast({ title: 'Round deleted' });
       load();
     } catch {

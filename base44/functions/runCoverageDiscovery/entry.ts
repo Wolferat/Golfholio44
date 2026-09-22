@@ -4,6 +4,7 @@ import { nearbySearch, placeDetails, isGolfRelated, isDuplicate, haversineMi } f
 import { isTrustedSourceUrl } from '../../shared/publicListingPolicy.ts';
 import { corroborateSourceUrl, validatePublicUrl } from '../../shared/automatedVerification.ts';
 import { computeBackoff } from '../../shared/coverageArea.ts';
+import { createCoverageNotification } from '../../shared/notifications.ts';
 
 // ============================================================
 // runCoverageDiscovery — admin/server-side discovery engine.
@@ -238,23 +239,25 @@ async function processCoverageRequest(base44: any, coverage: any) {
       }
     }
 
-    // Count verified listings in area
+    // Count verified listings in area and collect their IDs
     const allApproved = await base44.asServiceRole.entities.Listing
       .filter({ status: 'approved', golf_verified: true })
       .catch(() => []);
-    let verifiedCount = 0;
+    const verifiedIds: string[] = [];
     for (const l of allApproved) {
       if (l.latitude != null && l.longitude != null) {
         const dist = haversineMi(lat, lng, l.latitude, l.longitude);
-        if (dist <= radius) verifiedCount++;
+        if (dist <= radius) verifiedIds.push(l.id);
       }
     }
+    const verifiedCount = verifiedIds.length;
 
     // Update coverage request
+    const finalStatus = acceptedCount > 0 ? 'complete' : 'empty';
     const now = new Date().toISOString();
     const backoff = computeBackoff(coverage.retry_count || 0);
     await base44.asServiceRole.entities.CoverageRequest.update(coverageId, {
-      status: acceptedCount > 0 ? 'complete' : 'empty',
+      status: finalStatus,
       last_completed_at: now,
       last_run_at: now,
       result_count: candidatesFound,
@@ -266,9 +269,23 @@ async function processCoverageRequest(base44: any, coverage: any) {
       retry_count: (coverage.retry_count || 0) + 1,
     }).catch(() => {});
 
+    // Generate a deduped notification for the requesting player.
+    // Only fires on terminal states (complete/empty) — never on
+    // polls, retries, or intermediate states.
+    await createCoverageNotification(
+      base44,
+      coverage.requested_by_id,
+      coverage.area_key,
+      coverage.area_label,
+      coverage.canonical_city,
+      coverage.canonical_state,
+      finalStatus,
+      verifiedIds
+    ).catch(() => {});
+
     return {
       coverage_id: coverageId,
-      status: acceptedCount > 0 ? 'complete' : 'empty',
+      status: finalStatus,
       candidates_found: candidatesFound,
       accepted: acceptedCount,
       excluded: exclusionReasons.length,
@@ -285,6 +302,19 @@ async function processCoverageRequest(base44: any, coverage: any) {
       next_eligible_at: new Date(Date.now() + backoff).toISOString(),
       exclusion_reasons: JSON.stringify(exclusionReasons).slice(0, 10000),
     }).catch(() => {});
+
+    // Generate a deduped "still working" notification for the
+    // requesting player on failure.
+    await createCoverageNotification(
+      base44,
+      coverage.requested_by_id,
+      coverage.area_key,
+      coverage.area_label,
+      coverage.canonical_city,
+      coverage.canonical_state,
+      'failed',
+      []
+    ).catch(() => {});
 
     return { coverage_id: coverageId, status: 'failed', error: error.message };
   }

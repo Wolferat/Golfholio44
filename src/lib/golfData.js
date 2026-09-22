@@ -170,22 +170,31 @@ const state = {
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+// ============================================================
+// Canonical Rounds — real Round entity (merged Scorecard + RoundLog)
+// ============================================================
 export async function getRounds() {
-  await delay();
-  return [...state.rounds].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const all = await base44.entities.Round.list('-date', 100);
+  return all.filter((r) => r.status === 'completed' && r.score != null);
 }
-export async function addRound({ holes, score, date, notes }) {
-  await delay();
-  const round = { id: uid(), date, holes: Number(holes), score: Number(score), notes };
-  state.rounds.push(round);
-  return round;
+export async function addRound({ holes, score, date, notes, course_name }) {
+  const res = await base44.functions.invoke('logRound', {
+    course_name: course_name || undefined,
+    date,
+    holes: Number(holes),
+    score: Number(score),
+    notes: notes || undefined,
+  });
+  return res.data.round;
 }
 export async function getRoundStats() {
-  const rounds = state.rounds;
+  const rounds = await getRounds();
   if (!rounds.length) return { count: 0, avg: null, best: null };
-  const avg = Math.round(rounds.reduce((s, r) => s + r.score, 0) / rounds.length);
-  const best = Math.min(...rounds.map((r) => r.score));
-  return { count: rounds.length, avg, best };
+  const scores = rounds.map((r) => r.score).filter((n) => n != null && n > 0);
+  if (!scores.length) return { count: 0, avg: null, best: null };
+  const avg = Math.round(scores.reduce((s, n) => s + n, 0) / scores.length);
+  const best = Math.min(...scores);
+  return { count: scores.length, avg, best };
 }
 export async function getCrew() {
   await delay();
@@ -236,4 +245,27 @@ export async function reviewPhoto(id, action) {
   const p = state.pendingPhotos.find((x) => x.id === id);
   if (p) p.status = action;
   return true;
+}
+
+// ============================================================
+// Notifications — private in-app notification center
+// ============================================================
+export async function getNotifications() {
+  const res = await base44.functions.invoke('getNotifications', {});
+  return res.data;
+}
+
+export async function markNotificationRead(action, notification_id) {
+  const res = await base44.functions.invoke('markNotificationRead', { action, notification_id });
+  return res.data;
+}
+
+export async function getNotificationPreference() {
+  const res = await base44.functions.invoke('getNotificationPreference', {});
+  return res.data;
+}
+
+export async function setNotificationPreference(push_enabled) {
+  const res = await base44.functions.invoke('getNotificationPreference', { push_enabled });
+  return res.data;
 }

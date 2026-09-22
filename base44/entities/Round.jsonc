@@ -1,0 +1,137 @@
+{
+  "name": "Round",
+  "type": "object",
+  "properties": {
+    "listing_id": {
+      "type": "string",
+      "description": "Verified listing ID when linked to a course/simulator. Null for manual unlinked rounds."
+    },
+    "listing_name": {
+      "type": "string",
+      "description": "Venue name at time of round \u2014 from the listing or manual entry."
+    },
+    "course_name": {
+      "type": "string",
+      "description": "Course name for live scorecards or manual unlinked rounds."
+    },
+    "course_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "holes": {
+      "type": "number",
+      "enum": [
+        9,
+        18
+      ],
+      "default": 18
+    },
+    "score": {
+      "type": "number",
+      "description": "Total score \u2014 set directly for logged rounds, computed from the scores object for live scorecards on completion."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "completed"
+      ],
+      "default": "completed",
+      "description": "active = live scorecard in progress, completed = finished round (logged or live)."
+    },
+    "players": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Player names for live scorecards."
+    },
+    "pars": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "Hole-by-hole par array for live scorecards."
+    },
+    "scores": {
+      "type": "object",
+      "description": "Hole-by-hole scores keyed by player name then hole number. Used by live scorecards."
+    },
+    "notes": {
+      "type": "string"
+    },
+    "format": {
+      "type": "string",
+      "description": "Optional course/format details (e.g. stroke play, scramble)."
+    },
+    "tee_name": {
+      "type": "string",
+      "description": "Tee name/color (e.g. Blue, White, Gold)."
+    },
+    "par": {
+      "type": "number",
+      "description": "Total par for the tee and applicable holes."
+    },
+    "course_rating": {
+      "type": "number",
+      "description": "Course Rating for the tee and applicable holes."
+    },
+    "slope_rating": {
+      "type": "number",
+      "description": "Slope Rating for the tee and applicable holes."
+    },
+    "adjusted_gross_score": {
+      "type": "number",
+      "description": "Adjusted Gross Score \u2014 defaults to gross score when no hole-by-hole adjustment is available."
+    },
+    "pcc_adjustment": {
+      "type": "number",
+      "description": "PCC adjustment only when from a reliable/authorized source."
+    },
+    "rating_source": {
+      "type": "string",
+      "description": "Source/provenance for rating and slope data (e.g. scorecard, official site)."
+    },
+    "handicap_eligible": {
+      "type": "boolean",
+      "default": false
+    },
+    "eligibility_reason": {
+      "type": "string",
+      "description": "Why ineligible (e.g. 'missing course rating', '9-hole round')."
+    },
+    "tournament_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "date",
+    "holes"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

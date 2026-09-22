@@ -1,0 +1,61 @@
+{
+  "name": "DeviceSubscription",
+  "type": "object",
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": [
+        "ios",
+        "android",
+        "web"
+      ],
+      "description": "Device platform for push delivery."
+    },
+    "token": {
+      "type": "string",
+      "description": "Push token from APNs (iOS), FCM (Android), or Web Push endpoint. Stored securely \u2014 never exposed to other users."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "revoked",
+        "invalid"
+      ],
+      "default": "active",
+      "description": "active = deliverable, revoked = user turned off, invalid = token rejected by provider."
+    },
+    "invalidated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the token was marked invalid or revoked."
+    },
+    "last_used_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last time a push was attempted to this token."
+    },
+    "last_error": {
+      "type": "string",
+      "description": "Last delivery failure reason. Internal \u2014 never exposed to players."
+    }
+  },
+  "required": [
+    "platform",
+    "token"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

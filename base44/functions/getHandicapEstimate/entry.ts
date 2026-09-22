@@ -1,17 +1,16 @@
-import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
+import { createClientFromRequest } from 'npm:@base44/sdk@0.8.49';
 import { buildHandicapEstimate } from '../../shared/handicapEstimate.ts';
 
 // ============================================================
 // Get Handicap Estimate — player-facing, private by default.
 //
 // Returns the player's Golfolio Handicap Estimate based on
-// their logged 18-hole rounds with Course Rating and Slope Rating.
+// their completed 18-hole rounds with Course Rating and Slope Rating.
 //
 // This is NOT an official USGA/WHS Handicap Index. It is an
 // estimate based on logged rounds and course difficulty.
 //
-// Authenticated players only. Returns only the current user's
-// own rounds (RLS enforces this).
+// Reads from the canonical Round entity (status=completed).
 // ============================================================
 
 export default async function (req) {
@@ -20,10 +19,13 @@ export default async function (req) {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Fetch all of the user's rounds (RLS restricts to owner)
-    const rounds = await base44.entities.RoundLog
-      .list('-date', 100)
+    // Fetch all of the user's completed rounds (RLS restricts to owner).
+    const allRounds = await base44.entities.Round
+      .list('-date', 200)
       .catch(() => []);
+
+    // Only completed rounds with a score are relevant.
+    const rounds = allRounds.filter((r: any) => r.status === 'completed' && r.score != null);
 
     const result = buildHandicapEstimate(rounds);
 

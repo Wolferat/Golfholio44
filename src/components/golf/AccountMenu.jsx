@@ -8,7 +8,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings as SettingsIcon, Flag, Bookmark, LogOut, Shield, Building2 } from 'lucide-react';
+import { User, Settings as SettingsIcon, Flag, Bookmark, LogOut, Shield, Building2, Bell } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
 
@@ -48,6 +48,9 @@ export default function AccountMenu({ initials }) {
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate('/saved')}>
           <Bookmark className="h-4 w-4 mr-2" /> Saved places
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => navigate('/notifications')}>
+          <Bell className="h-4 w-4 mr-2" /> Notifications
         </DropdownMenuItem>
         {isAdmin && <DropdownMenuSeparator />}
         {isAdmin && (

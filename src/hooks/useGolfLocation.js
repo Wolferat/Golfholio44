@@ -36,6 +36,38 @@ export function useGolfLocation() {
   const [radius, setRadius] = useState(15);
   const [radiusExpanded, setRadiusExpanded] = useState(false);
 
+  // Deep-link support: if a `near` URL param is present (e.g. from a
+  // coverage notification tap), parse "City,State" and resolve coords
+  // so the Explore feed loads the correct policy-gated area.
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const near = urlParams.get('near');
+    if (near) {
+      const parts = near.split(',');
+      if (parts.length >= 2) {
+        const c = parts[0].trim();
+        const s = parts[1].trim();
+        setCity(c);
+        setState(s);
+        try { localStorage.setItem(CITY_KEY, c); localStorage.setItem(STATE_KEY, s); } catch {}
+        base44.functions.invoke('resolveLocation', { query: near })
+          .then((res) => {
+            const data = res?.data || res;
+            if (data?.results?.length > 0) {
+              const r = data.results[0];
+              if (r.lat && r.lng) {
+                const cc = { lat: r.lat, lng: r.lng };
+                setCoords(cc);
+                try { localStorage.setItem(COORDS_KEY, JSON.stringify(cc)); } catch {}
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Pull saved home_city from user profile only if nothing is stored locally.
   useEffect(() => {
     if (city || coords) return;

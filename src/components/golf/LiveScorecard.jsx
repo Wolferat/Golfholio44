@@ -19,10 +19,10 @@ export default function LiveScorecard({ cardId, onBack }) {
 
   useEffect(() => {
     let mounted = true;
-    base44.entities.Scorecard.get(cardId).then((c) => {
+    base44.entities.Round.get(cardId).then((c) => {
       if (mounted) { setCard(c); setLoading(false); }
     }).catch(() => { if (mounted) setLoading(false); });
-    const unsub = base44.entities.Scorecard.subscribe((event) => {
+    const unsub = base44.entities.Round.subscribe((event) => {
       if (event.id === cardId) setCard(event.data);
     });
     return () => { mounted = false; unsub(); };
@@ -51,7 +51,7 @@ export default function LiveScorecard({ cardId, onBack }) {
     if (readOnly) return;
     const next = { ...scores, [name]: { ...(scores[name] || {}), [String(h)]: value } };
     setCard({ ...card, scores: next });
-    await base44.entities.Scorecard.update(cardId, { scores: next });
+    await base44.entities.Round.update(cardId, { scores: next });
   };
   const totalFor = (name) => Object.values(scores[name] || {}).reduce((a, b) => a + (Number(b) || 0), 0);
   const vsParFor = (name) => {
@@ -76,7 +76,11 @@ export default function LiveScorecard({ cardId, onBack }) {
     toast({ title: 'Link copied', description: 'Share it so your crew can follow live.' });
   };
   const complete = async () => {
-    await base44.entities.Scorecard.update(cardId, { status: 'completed', notes: notes || null });
+    const primary = (card.players || [])[0];
+    const totalScore = primary
+      ? Object.values((card.scores || {})[primary] || {}).reduce((a, b) => a + (Number(b) || 0), 0)
+      : (card.score || 0);
+    await base44.entities.Round.update(cardId, { status: 'completed', score: totalScore, notes: notes || null });
     onBack?.();
   };
   const next = () => setHole((h) => Math.min(h + 1, holes));
@@ -85,7 +89,7 @@ export default function LiveScorecard({ cardId, onBack }) {
     if (readOnly) return;
     setSavingNotes(true);
     try {
-      await base44.entities.Scorecard.update(cardId, { notes: notes || null });
+      await base44.entities.Round.update(cardId, { notes: notes || null });
       toast({ title: 'Notes saved' });
     } catch {}
     setSavingNotes(false);
