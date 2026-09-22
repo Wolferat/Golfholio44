@@ -185,12 +185,23 @@ export default function Explore() {
 
   const handleToggleSave = async (id) => {
     if (!isAuthed) { gate(); return; }
-    const isSaved = await toggleFavorite(id);
+    const wasSaved = saved.has(id);
+    // Optimistic: toggle heart instantly before the API call finishes
     setSaved((prev) => {
       const next = new Set(prev);
-      isSaved ? next.add(id) : next.delete(id);
+      wasSaved ? next.delete(id) : next.add(id);
       return next;
     });
+    try {
+      await toggleFavorite(id);
+    } catch {
+      // Revert on failure
+      setSaved((prev) => {
+        const next = new Set(prev);
+        wasSaved ? next.add(id) : next.delete(id);
+        return next;
+      });
+    }
   };
 
   // Compact notice: only for queued/checking, dismissed per areaKey.

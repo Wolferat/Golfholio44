@@ -8,9 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
-import { MapPin, Bell, ShieldCheck, Mail, Lock, User, ChevronLeft, Check } from 'lucide-react';
+import { MapPin, Bell, ShieldCheck, Mail, Lock, User, ChevronLeft, Check, AlertTriangle } from 'lucide-react';
 import { buildLabel } from '@/lib/buildInfo';
 import { getNotificationPreference, setNotificationPreference } from '@/lib/golfData';
+import DeleteAccountSheet from '@/components/golf/DeleteAccountSheet';
 
 // ============================================================
 // Settings (Account & Preferences) — private account fields.
@@ -38,6 +39,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -205,10 +207,29 @@ export default function Settings() {
           </Button>
         </div>
 
+        {/* Danger Zone */}
+        <section className="space-y-3 pt-4">
+          <h2 className="text-xs font-bold text-destructive uppercase tracking-wider flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" /> Danger Zone
+          </h2>
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Delete account</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Permanently remove your account and all data.</div>
+              </div>
+              <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </section>
+
         <footer className="text-center text-xs text-muted-foreground pt-2 pb-4">
           {buildLabel()}
         </footer>
       </div>
+      <DeleteAccountSheet open={deleteOpen} onClose={() => setDeleteOpen(false)} />
     </div>
   );
 }

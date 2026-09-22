@@ -76,8 +76,15 @@ export default function ListingPage() {
       gate();
       return;
     }
-    const isSaved = await toggleFavorite(id);
-    setSaved(isSaved);
+    const wasSaved = saved;
+    // Optimistic: toggle heart instantly before the API call finishes
+    setSaved(!wasSaved);
+    try {
+      await toggleFavorite(id);
+    } catch {
+      // Revert on failure
+      setSaved(wasSaved);
+    }
   };
 
   const handleFlag = async () => {

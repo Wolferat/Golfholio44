@@ -103,6 +103,11 @@
   }
 
   html { -webkit-text-size-adjust: 100%; }
+
+  button, a, nav, header, .no-tap-highlight {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
 @layer utilities {
