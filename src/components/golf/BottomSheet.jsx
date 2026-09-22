@@ -4,7 +4,7 @@ export default function BottomSheet({ open, onClose, children, maxHeight = '88dv
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex justify-center">
+        <div className="fixed inset-0 z-[60] flex justify-center">
           <motion.div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -13,7 +13,7 @@ export default function BottomSheet({ open, onClose, children, maxHeight = '88dv
             onClick={onClose}
           />
           <motion.div
-            className="relative w-full max-w-md mt-auto bg-card rounded-t-[24px] border-t border-border overflow-y-auto no-scrollbar"
+            className="relative w-full max-w-2xl mt-auto bg-card rounded-t-[24px] border-t border-border overflow-y-auto no-scrollbar"
             style={{ maxHeight }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}

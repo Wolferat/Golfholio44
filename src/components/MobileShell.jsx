@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Compass, Flag, CalendarClock, Users, User } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useGate } from '@/components/golf/GateProvider';
 import { NavVisibilityProvider, useNavVisibility } from '@/components/golf/NavVisibilityContext';
@@ -18,32 +18,30 @@ function Shell() {
   const location = useLocation();
   const { gate, isAuthed } = useGate();
   const { hidden: navHidden } = useNavVisibility();
+  const reduceMotion = useReducedMotion();
   return (
-    <div className="min-h-dvh grid-stage">
+    <div className="min-h-dvh bg-background">
       <DesktopNav />
       <div className="md:flex md:items-start md:justify-center">
-        <div className="w-full max-w-md mx-auto bg-background min-h-dvh relative md:border-x md:border-border md:shadow-2xl">
-          <main className="pb-nav md:pb-8">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={location.pathname}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-              >
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+        <div className="w-full max-w-2xl mx-auto min-h-dvh relative">
+          <main className="pb-nav md:pb-10">
+            <motion.div
+              key={location.pathname}
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: reduceMotion ? 0 : 0.15, ease: [0.4, 0, 0.2, 1] }}
+            >
+              <Outlet />
+            </motion.div>
           </main>
           <nav
             className={cn(
-              'fixed bottom-0 inset-x-0 z-50 transition-opacity md:hidden',
+              'fixed bottom-0 inset-x-0 z-50 md:hidden transition-opacity',
               navHidden && 'hidden'
             )}
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
           >
-            <div className="max-w-md mx-auto glass border-t border-border grid grid-cols-5 h-16">
+            <div className="max-w-2xl mx-auto glass border-t border-border grid grid-cols-5 h-16">
               {TABS.map((t) => (
                 <NavLink
                   key={t.to}
