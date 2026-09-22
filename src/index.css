@@ -86,11 +86,14 @@
     @apply h-full;
   }
 
+  html {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground font-body antialiased;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
-    overflow-x: hidden;
     letter-spacing: -0.01em;
   }
 
