@@ -245,6 +245,8 @@ export function validatePublicUrlSync(urlStr: string): { valid: boolean; reason:
 export interface CorroborationResult {
   corroborated: boolean;
   reason: string;
+  // Private, bounded excerpt for server-side classification only.
+  sourceText?: string;
   evidence: {
     redirectMismatch?: boolean;
     sourceHost?: string;
@@ -357,7 +359,7 @@ export function evaluateCorroboration(
 // 5 redirects, cap response body at 1 MB, timeout at 8 s. Fail closed on
 // any DNS, redirect, parse, or fetch uncertainty. Safe failure reasons
 // do not expose internal network details.
-export async function corroborateSourceUrl(sourceUrl: string, listing: any): Promise<CorroborationResult> {
+export async function corroborateSourceUrl(sourceUrl: string, listing: any, includeSourceText = false): Promise<CorroborationResult> {
   const initialCheck = await validatePublicUrl(sourceUrl);
   if (!initialCheck.valid) {
     return { corroborated: false, reason: initialCheck.reason, evidence: { urlBlocked: true } };
@@ -422,7 +424,13 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
       .replace(/&#?\w+;/g, ' ')
       .replace(/\s+/g, ' ');
 
-    return evaluateCorroboration(text, sourceHost, finalHost, listing);
+    const result = evaluateCorroboration(text, sourceHost, finalHost, listing);
+    // Never pass Google Places payload to the AI. This excerpt comes only
+    // from the independently fetched official page, after corroboration.
+    if (includeSourceText && result.corroborated) {
+      return { ...result, sourceText: text.slice(0, 8000) };
+    }
+    return result;
   } catch (e: any) {
     return { corroborated: false, reason: 'fetch error', evidence: { fetchError: true } };
   }
