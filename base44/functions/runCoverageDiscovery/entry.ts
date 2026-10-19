@@ -5,6 +5,7 @@ import { isTrustedSourceUrl } from '../../shared/publicListingPolicy.ts';
 import { corroborateSourceUrl, validatePublicUrl } from '../../shared/automatedVerification.ts';
 import { computeBackoff } from '../../shared/coverageArea.ts';
 import { createCoverageNotification } from '../../shared/notifications.ts';
+import { classifyOfficialVenue } from '../../shared/openaiVenueVerification.ts';
 
 // ============================================================
 // runCoverageDiscovery — admin/server-side discovery engine.
@@ -38,46 +39,11 @@ function getCityState(components: any[]): { city: string; state: string } {
   return { city, state };
 }
 
-async function classifyWithLLM(base44: any, det: any): Promise<any | null> {
-  try {
-    return await base44.asServiceRole.integrations.Core.InvokeLLM({
-      prompt: `You are a golf venue classification assistant. Based ONLY on the evidence below, classify this venue.
-
-Venue name: ${det.name}
-Address: ${det.formatted_address || ''}
-Google Places types: ${(det.types || []).join(', ')}
-
-Return:
-1. is_golf: true if this is clearly a golf-related business (course, driving range, simulator, training, golf-related venue)
-2. category: one of "course", "simulator", "training", "golf_related_venue"
-3. reason: brief explanation
-
-Rules:
-- Use ONLY the evidence above. Do NOT invent information.
-- If the evidence is ambiguous, return is_golf: false.
-- "course" = physical golf course with holes
-- "simulator" = indoor golf simulator facility
-- "training" = golf instruction/training facility
-- "golf_related_venue" = other golf-related business`,
-      response_json_schema: {
-        type: 'object',
-        properties: {
-          is_golf: { type: 'boolean' },
-          category: { type: 'string' },
-          reason: { type: 'string' },
-        },
-      },
-    });
-  } catch {
-    return null;
-  }
-}
-
 // Process a single candidate with the full verification contract.
 // Returns { accepted, placeId, name, reason } so the caller can
 // aggregate results without shared mutable state during parallel
 // execution.
-async function processCandidate(base44: any, googleKey: string, placeId: string, info: any, existingListings: any[], coverageId: string) {
+async function processCandidate(base44: any, googleKey: string, openaiKey: string, placeId: string, info: any, existingListings: any[], coverageId: string) {
   const det = await placeDetails(googleKey, placeId).catch(() => null);
   if (!det) {
     return { accepted: false, placeId, name: null, reason: 'place details fetch failed' };
@@ -120,20 +86,24 @@ async function processCandidate(base44: any, googleKey: string, placeId: string,
     city,
     address: det.formatted_address || '',
     phone: det.formatted_phone_number || '',
-  });
+  }, true);
 
   if (!corroboration.corroborated) {
     return { accepted: false, placeId, name: det.name, reason: `source not corroborated: ${corroboration.reason}` };
   }
 
-  const llmResult = await classifyWithLLM(base44, det);
-  if (!llmResult || !llmResult.is_golf) {
-    return { accepted: false, placeId, name: det.name, reason: llmResult?.reason || 'LLM classified as non-golf' };
+  // Google identifies the candidate; OpenAI classifies only the independently
+  // fetched, corroborated official website. No Google Maps content is sent
+  // to OpenAI. Both must say golf, and the deterministic source check must pass.
+  const llmResult = await classifyOfficialVenue(openaiKey, corroboration.sourceText || '');
+  if (!llmResult) {
+    return { accepted: false, placeId, name: det.name, reason: 'OpenAI verification unavailable or inconclusive' };
+  }
+  if (llmResult.is_golf !== true || llmResult.category === 'unknown') {
+    return { accepted: false, placeId, name: det.name, reason: 'Google and OpenAI golf checks did not agree' };
   }
 
-  const category = ['course', 'simulator', 'training', 'golf_related_venue'].includes(llmResult.category)
-    ? llmResult.category
-    : info.type;
+  const category = llmResult.category;
 
   const now = new Date().toISOString();
   await base44.asServiceRole.entities.Listing.create({
@@ -190,7 +160,10 @@ async function processCoverageRequest(base44: any, coverage: any) {
 
   try {
     const googleKey = secrets.get('GOOGLE_PLACES_API_KEY');
+    const openaiKey = secrets.get('OPENAI_API_KEY');
     if (!googleKey) throw new Error('Google Places API key not available');
+    // Check both secrets before any paid discovery request.
+    if (!openaiKey) throw new Error('OpenAI API key not available');
 
     // Step 1: Discover candidates via Google Places (bounded)
     const seen = new Map<string, { type: string; place: any }>();
@@ -227,7 +200,7 @@ async function processCoverageRequest(base44: any, coverage: any) {
       const batch = candidates.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
         batch.map(([placeId, info]) =>
-          processCandidate(base44, googleKey, placeId, info, existingListings, coverageId)
+          processCandidate(base44, googleKey, openaiKey, placeId, info, existingListings, coverageId)
         )
       );
       for (const r of results) {
@@ -264,7 +237,7 @@ async function processCoverageRequest(base44: any, coverage: any) {
       accepted_count: acceptedCount,
       verified_count: verifiedCount,
       exclusion_reasons: JSON.stringify(exclusionReasons).slice(0, 10000),
-      source_provenance_summary: 'google_places+official_website',
+      source_provenance_summary: 'google_places+official_website+openai',
       next_eligible_at: new Date(Date.now() + backoff).toISOString(),
       retry_count: (coverage.retry_count || 0) + 1,
     }).catch(() => {});
