@@ -15,6 +15,7 @@ import {
   DEFAULT_RADIUS_MI,
   MAX_RADIUS_MI,
 } from '../../shared/publicListingPolicy.ts';
+import { parseVenueClassification } from '../../shared/openaiVenueVerification.ts';
 import {
   checkTournamentListing,
   evaluateTournamentListing,
@@ -331,6 +332,27 @@ export default async function (req) {
 
   // --- 26. Freshness window constant exists ---
   assert('freshness window is 24 hours', FRESHNESS_WINDOW_MS === 24 * 60 * 60 * 1000);
+
+  // OpenAI classifier parsing is server-only and fails closed.
+  const validAI = { status: 'completed', output: [{ content: [{
+    type: 'output_text', text: JSON.stringify({
+      is_golf: true, category: 'course', reason: 'Official page describes an 18-hole course',
+    }),
+  }] }] };
+  assert('OpenAI structured classification parses', parseVenueClassification(validAI)?.category === 'course');
+  assert('OpenAI refusal stays inconclusive', parseVenueClassification({ status: 'completed', output: [{
+    content: [{ type: 'refusal', refusal: 'cannot classify' }],
+  }] }) === null);
+  assert('OpenAI incomplete response stays inconclusive',
+    parseVenueClassification({ ...validAI, status: 'incomplete' }) === null);
+  assert('OpenAI invalid category stays inconclusive',
+    parseVenueClassification({ status: 'completed', output: [{ content: [{
+      type: 'output_text', text: '{"is_golf":true,"category":"restaurant","reason":"not golf"}',
+    }] }] }) === null);
+  assert('OpenAI golf with unknown category stays inconclusive',
+    parseVenueClassification({ status: 'completed', output: [{ content: [{
+      type: 'output_text', text: '{"is_golf":true,"category":"unknown","reason":"unclear"}',
+    }] }] }) === null);
 
   return Response.json({
     total: tests.length,
