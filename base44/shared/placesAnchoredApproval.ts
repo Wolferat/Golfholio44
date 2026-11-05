@@ -18,7 +18,7 @@
 // exactly that shape and nothing broader.
 // ============================================================
 
-import { isGolfRelated } from './googlePlaces.ts';
+import { golfEvidenceFromPlace } from './googlePlaces.ts';
 import { entityTypeForCategory, findExistingDuplicate } from './officialSourceVerification.ts';
 import {
   classifyLeadName,
@@ -47,6 +47,9 @@ export interface PlacesApprovalInput {
   latitude: number | null;
   longitude: number | null;
   placeTypes?: string[];
+  // What the business profile publishes about itself (editorial summary +
+  // reviews). Golf is often inside a business named for something else.
+  placeEvidenceText?: string;
   // The venue's own site when one is known. It is shown to the admin and
   // published for players, but it is NOT the trust proof on this path —
   // the record stays Places-anchored.
@@ -109,10 +112,17 @@ export function evaluatePlacesOnlyApproval(input: PlacesApprovalInput): PlacesAp
   if (!add('golf_business', !nameClass.excluded, nameClass.reason)) return deny(nameClass.reason);
 
   // A golf signal on the business itself is mandatory: this is the one
-  // trust fact that does not depend on the venue having a website.
-  const golf = isGolfRelated({ name, types: input.placeTypes || [] });
-  if (!add('golf_signal', golf.isGolf, `no golf signal on this business (${golf.reason})`)) {
-    return deny(`no golf signal on this business (${golf.reason})`);
+  // trust fact that does not depend on the venue having a website. Where
+  // the signal comes from is deliberately broad — the name, Google's own
+  // type list, the editorial summary or the reviews — because a venue can
+  // host a golf simulator without a golf word in its name.
+  const golf = golfEvidenceFromPlace({
+    name,
+    types: input.placeTypes || [],
+    reviews_text: input.placeEvidenceText || '',
+  });
+  if (!add('golf_signal', golf.isGolf, `no golf signal on the business profile (${golf.reason})`)) {
+    return deny(`no golf signal on the business profile (${golf.reason})`);
   }
 
   if (!add('place_id', placeId.length > 0, 'no Google place_id on record')) {
@@ -167,9 +177,11 @@ export function evaluatePlacesOnlyApproval(input: PlacesApprovalInput): PlacesAp
     source_url: googlePlaceUrl(placeId),
     source_type: 'google_places',
     verification_tier: PLACES_APPROVAL_TIER,
-    verification_notes: input.notes
-      ? `Published by an admin after review: ${input.notes}`
-      : 'Published by an admin without an official website: venue confirmed from its Google Business Profile (place_id, street address, coordinates). No official-site corroboration was possible.',
+    verification_notes: `${
+      input.notes
+        ? `Published by an admin after review: ${input.notes}`
+        : 'Published by an admin without an official website: venue confirmed from its Google Business Profile (place_id, street address, coordinates). No official-site corroboration was possible.'
+    } Golf evidence: ${golf.reason}.`,
     verified_at: now,
     verified_by: input.adminId,
     golf_verified: true,

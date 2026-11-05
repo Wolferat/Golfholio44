@@ -15,7 +15,7 @@
 // the venue before anything is published automatically.
 // ============================================================
 
-import { findPlaceAddress, placeDetails } from './googlePlaces.ts';
+import { findPlaceAddress, golfEvidenceFromPlace, placeDetails } from './googlePlaces.ts';
 import { isTrustedSourceUrl } from './publicListingPolicy.ts';
 import { isBlockedHost } from './photoValidation.ts';
 import {
@@ -46,6 +46,13 @@ export interface PlaceProfile {
   types: string[];
   lat: number | null;
   lng: number | null;
+  // What the profile itself publishes (summary + reviews). Golf is often
+  // run inside a business named for something else, so this text — not the
+  // name — is the evidence that the venue is golf related.
+  evidence_text: string;
+  golf_evidence: boolean;
+  golf_categories: string[];
+  golf_reason: string;
 }
 
 function comp(components: any[], type: string, short = false): string {
@@ -124,6 +131,7 @@ function profileFrom(placeId: string, det: any): PlaceProfile {
   const components = det.address_components || [];
   const streetNumber = comp(components, 'street_number');
   const route = comp(components, 'route');
+  const golf = golfEvidenceFromPlace(det);
   return {
     place_id: det.place_id || placeId,
     name: det.name || '',
@@ -140,6 +148,10 @@ function profileFrom(placeId: string, det: any): PlaceProfile {
     types: Array.isArray(det.types) ? det.types : [],
     lat: typeof det.geometry?.location?.lat === 'number' ? det.geometry.location.lat : null,
     lng: typeof det.geometry?.location?.lng === 'number' ? det.geometry.location.lng : null,
+    evidence_text: golf.text,
+    golf_evidence: golf.isGolf,
+    golf_categories: golf.categories,
+    golf_reason: golf.reason,
   };
 }
 

@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.54';
 import { secrets } from 'base44:runtime';
-import { nearbySearch, placeDetails, isGolfRelated } from '../../shared/googlePlaces.ts';
+import { nearbySearch, placeDetails, isGolfRelated, golfEvidenceFromPlace } from '../../shared/googlePlaces.ts';
 import { SHERMAN_IMPORT_CENTER, normalizeWebsiteUrl, haversineMi } from '../../shared/openaiDiscovery.ts';
 import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
 import { evaluatePlacesOnlyApproval } from '../../shared/placesAnchoredApproval.ts';
@@ -85,7 +85,7 @@ export default async function (req) {
     const radiusM = Math.round(IMPORT_RADIUS_MI * 1609.34);
 
     // 1. Source every lane around the center.
-    const found = new Map<string, { category: string }>();
+    const found = new Map<string, { category: string; nameSignal: boolean }>();
     for (const lane of LANES) {
       const results = await nearbySearch(key, center.lat, center.lng, radiusM, lane.type, lane.keyword).catch(
         () => []
@@ -94,7 +94,11 @@ export default async function (req) {
         if (!r?.place_id || found.has(r.place_id)) continue;
         // Keyword searches surface hotels, retail and offices. Keep only
         // businesses whose own listing carries a golf signal.
-        if (!isGolfRelated({ name: r.name, types: r.types }).isGolf) continue;
+        // A golf word in the name is preferred but never required: a
+        // bowling alley, sports bar or entertainment center can run a golf
+        // simulator under its own name. Those venues are kept and judged on
+        // what their business profile actually publishes.
+        const nameSignal = isGolfRelated({ name: r.name, types: r.types }).isGolf;
         const loc = r.geometry?.location;
         if (!loc) continue;
         // The API widens a keyword search beyond the radius; keep the

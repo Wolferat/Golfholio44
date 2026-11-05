@@ -4,7 +4,7 @@ import { SHERMAN_IMPORT_CENTER } from '../../shared/openaiDiscovery.ts';
 import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
 import { collectVerifiedPhotos } from '../../shared/officialSourceVerification.ts';
 import { evaluatePlacesOnlyApproval } from '../../shared/placesAnchoredApproval.ts';
-import { findPlaceAddress, placeDetails } from '../../shared/googlePlaces.ts';
+import { findPlaceAddress, golfEvidenceFromPlace, placeDetails } from '../../shared/googlePlaces.ts';
 import { usableWebsite } from '../../shared/venueEnrichment.ts';
 
 // ============================================================
@@ -178,6 +178,7 @@ export default async function (req) {
         latitude: det?.geometry?.location?.lat ?? candidate.latitude ?? null,
         longitude: det?.geometry?.location?.lng ?? candidate.longitude ?? null,
         placeTypes: det?.types || [],
+        placeEvidenceText: det ? golfEvidenceFromPlace(det).text : '',
         center: SHERMAN_IMPORT_CENTER,
         radiusMi,
         existingListings,

@@ -1,6 +1,8 @@
 // Shared Google Places helpers for seed + live-search backend functions.
 // Phase 1: Safe intake — no auto-approval, golf-only filtering, no photo re-hosting.
 
+import { detectCategories } from './openaiDiscovery.ts';
+
 export function haversineMi(lat1, lon1, lat2, lon2) {
   const toRad = (d) => (d * Math.PI) / 180;
   const R = 3958.8;
@@ -87,7 +89,8 @@ export async function placeDetails(key, placeId) {
   const params = new URLSearchParams({
     place_id: placeId,
     key,
-    fields: 'name,formatted_address,formatted_phone_number,website,rating,user_ratings_total,photos,geometry,address_components,types',
+    fields:
+      'name,formatted_address,formatted_phone_number,website,rating,user_ratings_total,photos,geometry,address_components,types,editorial_summary,reviews',
   });
   const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params}`);
   const data = await res.json();
@@ -153,6 +156,73 @@ export function isLikelyNonGolfName(name) {
   const hasGolfKw = GOLF_NAME_KEYWORDS.some((kw) => lower.includes(kw));
   const hasNonGolfKw = NON_GOLF_NAME_PATTERNS.some((p) => lower.includes(p));
   return hasNonGolfKw && !hasGolfKw;
+}
+
+// ------------------------------------------------------------
+// GOLF EVIDENCE FROM THE BUSINESS ITSELF
+//
+// A golf word in the business name is a shortcut, not a rule. Plenty of
+// real golf venues are named for something else: a sports bar with three
+// simulators, a family entertainment center, a bowling alley that added
+// golf ("Movie Bowl Grill"). Rejecting on the name alone throws those
+// venues away, so the evidence is read from what the business profile
+// itself publishes — its type list, editorial summary and reviews.
+// ------------------------------------------------------------
+export const GOLF_CONTENT_SIGNALS = [
+  'golf simulator', 'golf simulators', 'simulator golf', 'virtual golf',
+  'indoor golf', 'golf bay', 'golf bays', 'golf suite', 'golf lounge',
+  'golf studio', 'golf swing', 'golf ball', 'golf club', 'golf course',
+  'golf range', 'golf lesson', 'golf instruction', 'golf academy',
+  'golf league', 'golf tournament', 'golf outing', 'golf shop',
+  'club fitting', 'driving range', 'tee time', 'tee times',
+  'topgolf', 'top golf', 'x-golf', 'xgolf', 'drive shack', 'putt shack',
+  'mini golf', 'miniature golf', 'putt putt', 'putt-putt',
+  'par 3', 'par three', 'golf',
+];
+
+export interface GolfEvidence {
+  isGolf: boolean;
+  reason: string;
+  // The profile text the evidence came from (summary + reviews), so a
+  // caller can also derive a category from it.
+  text: string;
+  matched: string[];
+  categories: string[];
+}
+
+export function golfEvidenceFromPlace(place: any): GolfEvidence {
+  const name = String(place?.name || '');
+  const types = Array.isArray(place?.types) ? place.types : [];
+  const summary = String(place?.editorial_summary?.overview || place?.editorial_summary || '');
+  const reviews = Array.isArray(place?.reviews)
+    ? place.reviews.map((r: any) => String(r?.text || '')).join(' ')
+    : String(place?.reviews_text || '');
+  const text = [summary, reviews].filter(Boolean).join(' ').trim();
+
+  const nameCheck = isGolfRelated({ name, types });
+  const lower = `${name} ${text}`.toLowerCase();
+  const matched = GOLF_CONTENT_SIGNALS.filter((s) => lower.includes(s)).sort((a, b) => b.length - a.length);
+  const categories = Array.from(detectCategories(`${name} ${text}`));
+
+  if (nameCheck.isGolf) {
+    return { isGolf: true, reason: nameCheck.reason, text, matched, categories };
+  }
+  if (matched.length > 0) {
+    return {
+      isGolf: true,
+      reason: `golf mentioned on the business profile: ${matched.slice(0, 2).join(', ')}`,
+      text,
+      matched,
+      categories,
+    };
+  }
+  return {
+    isGolf: false,
+    reason: 'no golf signal in the name, type list, summary or reviews',
+    text,
+    matched: [],
+    categories: [],
+  };
 }
 
 // Fail-closed positive check: a record must contain a golf keyword to be considered golf-related.

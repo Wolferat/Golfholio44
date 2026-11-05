@@ -89,6 +89,12 @@ export interface LeadEvaluationInput {
   // lead sourced from Google Places carries a place_id instead, so the
   // search-evidence rule does not apply to it.
   requireSearchEvidence?: boolean;
+  // What the venue's Google Business Profile publishes about itself
+  // (types, editorial summary, review text). This is golf evidence for a
+  // venue whose own page is silent about golf — it is never a substitute
+  // for official-page corroboration, so it can only send a venue to the
+  // admin, never publish it.
+  placeEvidence?: { isGolf: boolean; text: string; categories: string[] } | null;
 }
 
 export interface LeadEvaluationResult {
@@ -416,6 +422,23 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
   // page itself supports; the venue name is never category evidence.
   const pageDetected = detectCategories(input.pageText);
   if (pageDetected.size === 0) {
+    // The venue's own page says nothing about golf. A business profile that
+    // does (simulators, bays, mini golf inside an entertainment center) is
+    // real evidence this is a golf venue — but not official-page
+    // corroboration, so it is the admin's call, never an auto-publish.
+    if (input.placeEvidence?.isGolf) {
+      const fromProfile = (input.placeEvidence.categories || []).map(normalizeCategory).filter(Boolean);
+      category =
+        (fromProfile.length === 1 ? fromProfile[0] : '') ||
+        normalizeCategory(lead.category) ||
+        'entertainment_golf';
+      add('category_verified', false, 'golf evidence comes from the Google Business Profile, not the official page');
+      return deny(
+        'pending',
+        'golf evidence comes from the Google Business Profile (types, summary or reviews), not the official page — needs your call',
+        { corroboration }
+      );
+    }
     add('category_verified', false, 'official page does not establish a golf category');
     return deny('pending', 'official page does not establish a golf category', { corroboration });
   }

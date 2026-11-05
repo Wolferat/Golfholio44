@@ -204,24 +204,42 @@ export function hasGolfNameSignal(name: string): boolean {
   return GOLF_NAME_SIGNALS.some((k) => lower.includes(k));
 }
 
-export function classifyLeadName(name: string): { excluded: boolean; reason: string } {
+export interface LeadNameVerdict {
+  excluded: boolean;
+  reason: string;
+  // A non-golf business word appears in the name. That alone never rejects
+  // a venue — an entertainment center, bowling alley or bar can host a golf
+  // simulator — so the caller must find golf evidence in the venue's own
+  // content instead of trusting the name either way.
+  requiresGolfEvidence: boolean;
+}
+
+export function classifyLeadName(name: string): LeadNameVerdict {
   const lower = String(name || '').toLowerCase();
-  if (!lower.trim()) return { excluded: true, reason: 'missing venue name' };
+  if (!lower.trim()) return { excluded: true, reason: 'missing venue name', requiresGolfEvidence: false };
 
   const hard = HARD_EXCLUDE_PATTERNS.find((p) => lower.includes(p));
-  if (hard) return { excluded: true, reason: `out of scope: ${hard}` };
+  if (hard) return { excluded: true, reason: `out of scope: ${hard}`, requiresGolfEvidence: false };
 
   const adult = ADULT_EXCLUDE_PATTERNS.find((p) => lower.includes(p));
-  if (adult) return { excluded: true, reason: 'adult/unsafe business signal' };
+  if (adult) return { excluded: true, reason: 'adult/unsafe business signal', requiresGolfEvidence: false };
 
   const unsafe = UNSAFE_EXCLUDE_PATTERNS.find((p) => lower.includes(p));
-  if (unsafe) return { excluded: true, reason: `excluded business type: ${unsafe.trim()}` };
+  if (unsafe) {
+    return { excluded: true, reason: `excluded business type: ${unsafe.trim()}`, requiresGolfEvidence: false };
+  }
 
   const golfSignal = GOLF_NAME_SIGNALS.some((k) => lower.includes(k));
   const nonGolf = NON_GOLF_PATTERNS.find((p) => lower.includes(p));
-  if (nonGolf && !golfSignal) return { excluded: true, reason: `non-golf business signal: ${nonGolf.trim()}` };
+  if (nonGolf && !golfSignal) {
+    return {
+      excluded: false,
+      reason: `name reads as a non-golf business ("${nonGolf.trim()}") — golf evidence required from the venue itself`,
+      requiresGolfEvidence: true,
+    };
+  }
 
-  return { excluded: false, reason: '' };
+  return { excluded: false, reason: '', requiresGolfEvidence: false };
 }
 
 export const CATEGORY_SIGNALS: Record<string, string[]> = {

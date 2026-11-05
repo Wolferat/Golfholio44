@@ -130,6 +130,9 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
       sourceError: doc && !doc.ok ? doc.reason : '',
       requireCoordinateAgreement,
       requireSearchEvidence: input.requireSearchEvidence,
+      placeEvidence: place
+        ? { isGolf: place.golf_evidence, text: place.evidence_text, categories: place.golf_categories }
+        : null,
     });
 
   let evaluation = run(doc?.ok ? doc.text : '', doc?.ok ? doc.html : '');
