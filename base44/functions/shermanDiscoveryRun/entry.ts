@@ -283,6 +283,8 @@ export default async function (req) {
         category: current.category,
         openai_ok: ai.ok,
         openai_reason: ai.reason,
+        search_calls: ai.search_calls,
+        search_evidence_urls: ai.evidence_urls.length,
         leads_returned: ai.leads.length,
         leads_truncated: Math.max(0, ai.leads.length - MAX_LEADS_PER_QUERY),
         source_fetches: 0,
@@ -349,12 +351,12 @@ export default async function (req) {
             step.source_fetches++;
           }
 
-          let geocoded: { lat: number; lng: number } | null = null;
+          // Keep the full geocoding result: the canonical postal code and
+          // street line must be confirmed by the official page.
+          let geocoded: any = null;
           if (geocodeKey && lead.address) {
             const g = await geocode(geocodeKey, String(lead.address)).catch(() => null);
-            if (g && typeof g.lat === 'number' && typeof g.lng === 'number') {
-              geocoded = { lat: g.lat, lng: g.lng };
-            }
+            if (g && typeof g.lat === 'number' && typeof g.lng === 'number') geocoded = g;
           }
 
           const evaluation = evaluateLead({
@@ -367,6 +369,7 @@ export default async function (req) {
             radiusMi: Number(job.radius_miles) || 30,
             existingListings,
             geocoded,
+            searchEvidenceUrls: ai.evidence_urls,
             jobId: job.id,
             bookingUrl: doc?.ok ? extractOfficialBookingUrl(doc.html, doc.finalUrl) : '',
           });
@@ -405,6 +408,19 @@ export default async function (req) {
               checks: evaluation.checks,
               corroboration: evaluation.corroboration
                 ? { reason: evaluation.corroboration.reason, evidence: evaluation.corroboration.evidence }
+                : null,
+              search: {
+                calls: ai.search_calls,
+                evidence_urls: ai.evidence_urls.slice(0, 25),
+              },
+              geocoded_address: geocoded
+                ? {
+                    formatted_address: geocoded.formatted_address || '',
+                    postal_code: geocoded.postal_code || '',
+                    street_line: geocoded.street_line || '',
+                    latitude: geocoded.lat,
+                    longitude: geocoded.lng,
+                  }
                 : null,
               coordinate_source: 'google_geocoding_official_address',
             }).slice(0, 9000),

@@ -15,8 +15,27 @@ export async function geocode(key, address) {
   const res = await fetch(url);
   const data = await res.json();
   if (data.status !== 'OK' || !data.results?.length) return null;
-  const loc = data.results[0].geometry.location;
-  return { lat: loc.lat, lng: loc.lng };
+  const result = data.results[0];
+  const loc = result.geometry.location;
+  const parts = result.address_components || [];
+  const pick = (type, short = false) => {
+    const c = parts.find((x) => (x.types || []).includes(type));
+    if (!c) return '';
+    return (short ? c.short_name : c.long_name) || '';
+  };
+  const streetNumber = pick('street_number');
+  const route = pick('route');
+  return {
+    lat: loc.lat,
+    lng: loc.lng,
+    // The canonical address Google actually resolved. The official page
+    // must confirm this postal code or street line before approval.
+    formatted_address: result.formatted_address || '',
+    postal_code: pick('postal_code', true),
+    street_line: [streetNumber, route].filter(Boolean).join(' '),
+    locality: pick('locality') || pick('postal_town'),
+    admin_area: pick('administrative_area_level_1', true),
+  };
 }
 
 export async function nearbySearch(key, lat, lng, radiusM, type, keyword) {

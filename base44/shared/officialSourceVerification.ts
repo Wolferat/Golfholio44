@@ -18,9 +18,9 @@
 // here weakens or bypasses the player-facing policy.
 // ============================================================
 
-import { evaluateCorroboration, validatePublicUrl } from './automatedVerification.ts';
+import { evaluateCorroboration } from './automatedVerification.ts';
 import { checkPublicListing, isTrustedSourceUrl } from './publicListingPolicy.ts';
-import { extractImageUrls, isBlockedHost } from './photoValidation.ts';
+import { checkImageUrl, extractImageUrls, isBlockedHost } from './photoValidation.ts';
 import {
   CATEGORY_SIGNALS,
   DISCOVERY_CATEGORIES,
@@ -30,6 +30,7 @@ import {
   domainOf,
   haversineMi,
   hostOf,
+  leadHasSearchEvidence,
   normalizeAddress,
   normalizeCategory,
   normalizeName,
@@ -59,7 +60,17 @@ export interface LeadEvaluationInput {
   center: { lat: number; lng: number };
   radiusMi: number;
   existingListings: any[];
-  geocoded?: { lat: number; lng: number } | null;
+  // Google Geocoding result for the lead's address, including the
+  // canonical postal code / street line the official page must confirm.
+  geocoded?: {
+    lat: number;
+    lng: number;
+    postal_code?: string;
+    street_line?: string;
+    formatted_address?: string;
+  } | null;
+  // URLs the OpenAI web search actually returned for this query.
+  searchEvidenceUrls?: string[];
   jobId?: string;
   bookingUrl?: string;
   nowIso?: string;
@@ -128,6 +139,63 @@ function corroboratedPhone(leadPhone: any, pageText: string): string {
   if (digits.length < 10) return '';
   const last4 = digits.slice(-4);
   return String(pageText || '').replace(/\D/g, '').includes(last4) ? String(leadPhone).trim() : '';
+}
+
+const STREET_STOP_WORDS = new Set([
+  'street', 'avenue', 'road', 'drive', 'boulevard', 'lane', 'highway', 'suite',
+  'north', 'south', 'east', 'west', 'parkway', 'court', 'circle', 'place',
+  'trail', 'texas', 'oklahoma', 'united', 'states', 'county',
+]);
+
+function streetTokens(address: string): { number: string; words: string[] } {
+  const raw = String(address || '');
+  const numMatch = raw.match(/\b(\d{2,6})\b/);
+  const words = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !/^\d+$/.test(w) && !STREET_STOP_WORDS.has(w));
+  return { number: numMatch ? numMatch[1] : '', words };
+}
+
+// The official page must confirm the SPECIFIC address used for geocoding:
+// either the canonical postal code, or the street number plus its street
+// name. A city-only match is never sufficient.
+export function addressConfirmedOnPage(
+  pageText: string,
+  geocoded: any,
+  leadAddress: string
+): { confirmed: boolean; method: string; detail: string } {
+  const page = String(pageText || '').toLowerCase();
+
+  const zip =
+    String(geocoded?.postal_code || '').match(/\b(\d{5})\b/)?.[1] ||
+    String(leadAddress || '').match(/\b(\d{5})\b/)?.[1] ||
+    '';
+  if (zip && page.includes(zip)) {
+    return { confirmed: true, method: 'postal_code', detail: `official page shows postal code ${zip}` };
+  }
+
+  const addressSource = geocoded?.street_line || leadAddress || '';
+  const { number, words } = streetTokens(addressSource);
+  if (number && words.length > 0 && page.includes(number)) {
+    const matched = words.filter((w) => page.includes(w));
+    if (matched.length >= Math.ceil(words.length * 0.5)) {
+      return {
+        confirmed: true,
+        method: 'street_address',
+        detail: `official page shows street number ${number} and ${matched.length}/${words.length} street-name tokens`,
+      };
+    }
+  }
+
+  return {
+    confirmed: false,
+    method: 'none',
+    detail: zip || number
+      ? `official page shows neither postal code ${zip || '(none)'} nor street address "${addressSource}"`
+      : 'no geocodable address or postal code was available to confirm',
+  };
 }
 
 // Find an official booking/tee-time link on the same site. A
@@ -221,7 +289,9 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
   const name = typeof lead.name === 'string' ? lead.name.trim() : '';
   const center = input.center;
   const radius = Math.min(Math.max(Number(input.radiusMi) || 30, 1), 30);
-  const category = normalizeCategory(lead.category);
+  // Resolved later from the OFFICIAL PAGE text only — never from the
+  // model's claim alone, and never from the venue name.
+  let category = normalizeCategory(lead.category);
   const website = normalizeWebsiteUrl(lead.website);
 
   const coords =
@@ -277,22 +347,51 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
     return deny('pending', `official page did not corroborate venue: ${corroboration.reason}`, { corroboration });
   }
 
-  const leadCity = String(lead.city || '').trim();
-  if (leadCity && !String(input.pageText || '').toLowerCase().includes(leadCity.toLowerCase())) {
-    add('city_supported', false, 'official page does not confirm the venue city');
-    return deny('pending', 'official page does not confirm the venue city', { corroboration });
-  }
-  add('city_supported', true);
-
-  if (!category) {
-    add('category_verified', false, 'ambiguous category');
-    return deny('pending', 'ambiguous category', { corroboration });
+  // The lead must originate from a real web search that actually surfaced
+  // this venue's official site. A model-invented lead cannot pass this.
+  const searchEvidence = leadHasSearchEvidence(lead, input.searchEvidenceUrls || []);
+  if (!add('search_evidence', searchEvidence.matched, searchEvidence.reason)) {
+    return deny('pending', `no web-search evidence: ${searchEvidence.reason}`, { corroboration });
   }
 
-  const detected = detectCategories(`${input.pageText} ${name}`);
-  if (!add('category_verified', detected.has(category), `official page does not support category ${category}`)) {
-    return deny('pending', `official page does not support category ${category}`, { corroboration });
+  // Identity: the venue name must appear on its own official page.
+  if (!add('venue_identity_confirmed', corroboration.evidence?.nameMatch === true, 'official page does not name this venue')) {
+    return deny('pending', 'official page does not name this venue', { corroboration });
   }
+
+  // Location: the page must confirm the exact address or postal code used
+  // for geocoding. A city match alone is never sufficient.
+  const addr = addressConfirmedOnPage(input.pageText, input.geocoded, lead.address);
+  if (!add('address_confirmed', addr.confirmed, addr.detail)) {
+    return deny('pending', `official page does not confirm the address: ${addr.detail}`, { corroboration });
+  }
+
+  // Category must be established by the official page text alone. The
+  // model's category claim may only disambiguate between categories the
+  // page itself supports; the venue name is never category evidence.
+  const pageDetected = detectCategories(input.pageText);
+  if (pageDetected.size === 0) {
+    add('category_verified', false, 'official page does not establish a golf category');
+    return deny('pending', 'official page does not establish a golf category', { corroboration });
+  }
+  const claimed = normalizeCategory(lead.category);
+  const supported = Array.from(pageDetected).sort().join(', ');
+
+  if (claimed && !pageDetected.has(claimed)) {
+    // The lead's category claim is not supported by its own page: treat as
+    // a source disagreement rather than re-labelling the venue silently.
+    add('category_verified', false, `official page does not support the claimed category ${claimed} (page supports: ${supported})`);
+    return deny('pending', `official page does not support the claimed category ${claimed} (page supports: ${supported})`, { corroboration });
+  }
+  if (claimed) {
+    category = claimed;
+  } else if (pageDetected.size === 1) {
+    category = Array.from(pageDetected)[0];
+  } else {
+    add('category_verified', false, `category ambiguous on official page (${supported})`);
+    return deny('pending', `category ambiguous on official page (${supported})`, { corroboration });
+  }
+  add('category_verified', true);
 
   if (!coords) {
     add('coordinates_verified', false, 'coordinates could not be corroborated from an official address');
@@ -382,37 +481,20 @@ export async function verifyOfficialPhoto(
     attribution: '',
   });
 
-  if (isBlockedHost(imageUrl)) return reject('blocked image host (social/directory/stock/Google)');
+  // Every hop (initial URL and each redirect) is validated with the same
+  // public-URL/SSRF rules used for official-page fetches. Any unsafe or
+  // unverifiable hop rejects the photo.
+  const checked = await checkImageUrl(imageUrl, 'HEAD');
+  if (!checked.ok) return reject(checked.reason);
 
-  const urlCheck = await validatePublicUrl(imageUrl);
-  if (!urlCheck.valid) return reject(urlCheck.reason);
-
-  try {
-    const res = await fetch(imageUrl, {
-      method: 'HEAD',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'Golfolio-PhotoCheck/1.0 (+https://sync-flow-go-utopian.base44.app)' },
-    });
-    if (!res.ok) return reject(`HTTP ${res.status}`);
-
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    if (!contentType.startsWith('image/')) return reject(`not an image: ${contentType || 'unknown'}`);
-
-    const length = parseInt(res.headers.get('content-length') || '0', 10);
-    if (length > 0 && length < MIN_IMAGE_BYTES) return reject(`image too small (${length} bytes)`);
-
-    const host = hostOf(officialPageUrl);
-    return {
-      accepted: true,
-      reason: 'referenced by the verified official page',
-      photo_url: imageUrl,
-      source_url: officialPageUrl,
-      attribution: `Official venue photo — ${host}`,
-    };
-  } catch {
-    return reject('image fetch failed');
-  }
+  const host = hostOf(officialPageUrl);
+  return {
+    accepted: true,
+    reason: 'referenced by the verified official page',
+    photo_url: checked.finalUrl || imageUrl,
+    source_url: officialPageUrl,
+    attribution: `Official venue photo — ${host}`,
+  };
 }
 
 export async function collectVerifiedPhotos(

@@ -33,7 +33,7 @@
 // Never show uncertain imagery.
 // ============================================================
 
-import { validatePublicUrl } from './automatedVerification.ts';
+import { validatePublicUrl, validatePublicUrlSync } from './automatedVerification.ts';
 
 const MIN_IMAGE_BYTES = 8192; // 8 KB — rejects tiny icons, logos, map tiles
 const MAX_CANDIDATES = 12; // per listing — limits LLM calls
@@ -128,6 +128,119 @@ export function isBlockedHost(url: string): boolean {
   } catch {
     return true; // invalid URL = blocked
   }
+}
+
+// ------------------------------------------------------------
+// Synchronous destination gate for an image URL or REDIRECT hop.
+// Applies the same blocked-host and reserved/private-address rules
+// used for official-page fetches. Used on every hop, so a redirect
+// into a private network can never be followed.
+// ------------------------------------------------------------
+export function isSafeImageDestination(url: string): { safe: boolean; reason: string } {
+  if (isBlockedHost(url)) {
+    return { safe: false, reason: 'blocked host (third-party tracker/directory/social/ad/stock/Google)' };
+  }
+  const urlCheck = validatePublicUrlSync(url);
+  if (!urlCheck.valid) return { safe: false, reason: urlCheck.reason };
+  return { safe: true, reason: '' };
+}
+
+// ------------------------------------------------------------
+// Fetch an image, validating EVERY hop. The initial URL and each
+// redirect destination must pass the same public-URL/SSRF rules as
+// official-page fetches. Any unsafe or unverifiable hop rejects the
+// image. Max 5 redirects, 8 s timeout.
+// ------------------------------------------------------------
+export async function checkImageUrl(
+  imageUrl: string,
+  method: 'HEAD' | 'GET' = 'HEAD'
+): Promise<{ ok: boolean; reason: string; contentType: string; contentLength: number; finalUrl: string }> {
+  const MAX_REDIRECTS = 5;
+  let currentUrl = imageUrl;
+
+  try {
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const gate = isSafeImageDestination(currentUrl);
+      if (!gate.safe) {
+        return {
+          ok: false,
+          reason: hop === 0 ? gate.reason : `unsafe redirect destination: ${gate.reason}`,
+          contentType: '',
+          contentLength: 0,
+          finalUrl: currentUrl,
+        };
+      }
+
+      // Hostname-based destinations are also resolved and checked, so a
+      // public-looking hostname pointing at a private IP is rejected.
+      const resolved = await validatePublicUrl(currentUrl);
+      if (!resolved.valid) {
+        return {
+          ok: false,
+          reason: hop === 0 ? resolved.reason : `unsafe redirect destination: ${resolved.reason}`,
+          contentType: '',
+          contentLength: 0,
+          finalUrl: currentUrl,
+        };
+      }
+
+      const response = await fetch(currentUrl, {
+        method,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(8000),
+        headers: { 'User-Agent': 'Golfolio-PhotoBot/1.0 (+https://sync-flow-go-utopian.base44.app)' },
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return { ok: false, reason: 'redirect missing location', contentType: '', contentLength: 0, finalUrl: currentUrl };
+        }
+        let nextUrl: string;
+        try {
+          nextUrl = new URL(location, currentUrl).href;
+        } catch {
+          return { ok: false, reason: 'invalid redirect', contentType: '', contentLength: 0, finalUrl: currentUrl };
+        }
+        if (hop === MAX_REDIRECTS) {
+          return { ok: false, reason: 'too many redirects', contentType: '', contentLength: 0, finalUrl: currentUrl };
+        }
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      if (!response.ok) {
+        return { ok: false, reason: `HTTP ${response.status}`, contentType: '', contentLength: 0, finalUrl: currentUrl };
+      }
+
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+      if (!contentType.startsWith('image/')) {
+        return {
+          ok: false,
+          reason: `not an image: ${contentType || 'unknown'}`,
+          contentType,
+          contentLength,
+          finalUrl: currentUrl,
+        };
+      }
+      if (contentLength > 0 && contentLength < MIN_IMAGE_BYTES) {
+        return {
+          ok: false,
+          reason: `image too small (${contentLength} bytes)`,
+          contentType,
+          contentLength,
+          finalUrl: currentUrl,
+        };
+      }
+
+      return { ok: true, reason: '', contentType, contentLength, finalUrl: currentUrl };
+    }
+  } catch {
+    return { ok: false, reason: 'image fetch failed', contentType: '', contentLength: 0, finalUrl: currentUrl };
+  }
+
+  return { ok: false, reason: 'too many redirects', contentType: '', contentLength: 0, finalUrl: currentUrl };
 }
 
 // ------------------------------------------------------------
@@ -264,34 +377,15 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
 async function preCheckImage(
   imageUrl: string
 ): Promise<{ ok: boolean; reason: string; contentType: string; contentLength: number }> {
-  const check = await validatePublicUrl(imageUrl);
-  if (!check.valid) return { ok: false, reason: check.reason, contentType: '', contentLength: 0 };
-
-  if (isBlockedHost(imageUrl)) {
-    return { ok: false, reason: 'blocked host (third-party tracker/directory/social/ad/stock)', contentType: '', contentLength: 0 };
-  }
-
-  try {
-    const response = await fetch(imageUrl, {
-      method: 'HEAD',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'Golfolio-PhotoBot/1.0 (+https://sync-flow-go-utopian.base44.app)' },
-    });
-    if (!response.ok) return { ok: false, reason: `HTTP ${response.status}`, contentType: '', contentLength: 0 };
-    const contentType = (response.headers.get('content-type') || '').toLowerCase();
-    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-    if (!contentType.startsWith('image/')) {
-      return { ok: false, reason: `not an image: ${contentType || 'unknown'}`, contentType, contentLength };
-    }
-    if (contentLength > 0 && contentLength < MIN_IMAGE_BYTES) {
-      return { ok: false, reason: `image too small (${contentLength} bytes)`, contentType, contentLength };
-    }
-    return { ok: true, reason: '', contentType, contentLength };
-  } catch {
-    // HEAD might fail (server doesn't support it) — allow LLM to check
-    return { ok: true, reason: 'HEAD unavailable — deferring to LLM', contentType: '', contentLength: 0 };
-  }
+  // Every hop is validated with the same public-URL/SSRF rules used for
+  // official-page fetches. An unsafe hop rejects the image outright.
+  const checked = await checkImageUrl(imageUrl, 'HEAD');
+  return {
+    ok: checked.ok,
+    reason: checked.reason,
+    contentType: checked.contentType,
+    contentLength: checked.contentLength,
+  };
 }
 
 // ------------------------------------------------------------

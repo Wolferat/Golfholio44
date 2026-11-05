@@ -239,6 +239,13 @@ export function domainOf(url: string): string {
   return hostOf(url);
 }
 
+// Exact host or dot-boundary suffix match only. Never a bare substring:
+// 'x.com' must not match 'eaglesnestctx.com'.
+export function hostMatches(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}
+
 export function normalizeName(name: string): string {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -335,6 +342,61 @@ export interface ParsedOpenAIResult {
   reason: string;
   refusal: boolean;
   usage: { input_tokens: number; output_tokens: number; total_tokens: number };
+  // Proof that a real web-search call happened, plus the URLs it cited.
+  // A response with zero search calls fails closed.
+  search_calls: number;
+  evidence_urls: string[];
+}
+
+// Collect web-search proof: how many web_search_call items the API
+// actually executed, and every URL it cited (action sources +
+// url_citation annotations). Zero calls = not a search result.
+export function collectSearchEvidence(data: any): { searchCalls: number; urls: string[] } {
+  const urls = new Set<string>();
+  let searchCalls = 0;
+  const output = Array.isArray(data?.output) ? data.output : [];
+
+  for (const item of output) {
+    if (item?.type === 'web_search_call') {
+      searchCalls++;
+      const sources = item?.action?.sources;
+      if (Array.isArray(sources)) {
+        for (const s of sources) {
+          if (typeof s?.url === 'string' && s.url) urls.add(s.url);
+        }
+      }
+      if (typeof item?.action?.url === 'string' && item.action.url) urls.add(item.action.url);
+    }
+    if (item?.type === 'message' && Array.isArray(item.content)) {
+      for (const part of item.content) {
+        if (!Array.isArray(part?.annotations)) continue;
+        for (const a of part.annotations) {
+          if (typeof a?.url === 'string' && a.url) urls.add(a.url);
+        }
+      }
+    }
+  }
+  return { searchCalls, urls: Array.from(urls) };
+}
+
+// Per-lead search evidence. The lead's official website must appear in
+// the URLs the web search actually returned. A model-invented lead has
+// no way to satisfy this.
+export function leadHasSearchEvidence(
+  lead: any,
+  evidenceUrls: string[]
+): { matched: boolean; reason: string } {
+  const website = normalizeWebsiteUrl(lead?.website);
+  if (!website) {
+    return { matched: false, reason: 'lead has no official website to match against search results' };
+  }
+  const leadHost = hostOf(website);
+  if (!leadHost) return { matched: false, reason: 'lead website host is invalid' };
+
+  const matched = (evidenceUrls || []).some((u) => hostMatches(hostOf(u), leadHost));
+  return matched
+    ? { matched: true, reason: '' }
+    : { matched: false, reason: 'lead website does not appear in the web-search results' };
 }
 
 export function parseOpenAIResponse(data: any): ParsedOpenAIResult {
@@ -343,8 +405,15 @@ export function parseOpenAIResponse(data: any): ParsedOpenAIResult {
     output_tokens: Number(data?.usage?.output_tokens) || 0,
     total_tokens: Number(data?.usage?.total_tokens) || 0,
   };
+  const search = collectSearchEvidence(data);
   const fail = (reason: string, refusal = false): ParsedOpenAIResult => ({
-    ok: false, leads: [], reason, refusal, usage,
+    ok: false,
+    leads: [],
+    reason,
+    refusal,
+    usage,
+    search_calls: search.searchCalls,
+    evidence_urls: search.urls,
   });
 
   if (!data || typeof data !== 'object') return fail('empty response');
@@ -355,6 +424,13 @@ export function parseOpenAIResponse(data: any): ParsedOpenAIResult {
   }
   if (data.status === 'failed') return fail('openai response status failed');
   if (data.status === 'incomplete') return fail('openai response incomplete');
+
+  // Hard requirement: the model must actually have searched the web.
+  // An answer produced without a web_search call is not discovery
+  // evidence and is never accepted.
+  if (search.searchCalls === 0) {
+    return fail('no web search call was made for this query');
+  }
 
   let text = '';
   let refusal = false;
@@ -385,7 +461,15 @@ export function parseOpenAIResponse(data: any): ParsedOpenAIResult {
   if (!parsed || !Array.isArray(parsed.leads)) return fail('malformed payload: leads array missing');
 
   const leads = parsed.leads.filter((l: any) => l && typeof l === 'object');
-  return { ok: true, leads, reason: '', refusal: false, usage };
+  return {
+    ok: true,
+    leads,
+    reason: '',
+    refusal: false,
+    usage,
+    search_calls: search.searchCalls,
+    evidence_urls: search.urls,
+  };
 }
 
 export async function callOpenAIWebSearch(

@@ -9,9 +9,11 @@ import {
   planQueryPlan,
 } from '../../shared/openaiDiscovery.ts';
 import {
+  addressConfirmedOnPage,
   evaluateLead,
   findExistingDuplicate,
 } from '../../shared/officialSourceVerification.ts';
+import { checkImageUrl, isSafeImageDestination } from '../../shared/photoValidation.ts';
 
 // ============================================================
 // runShermanDiscoveryTests — admin-only, SYNTHETIC ONLY.
@@ -57,6 +59,9 @@ function evalLead(lead: any, pageText: string, geocoded: any, extra: any = {}) {
     sourceUrl: lead.website || '',
     finalUrl: lead.website || '',
     geocoded,
+    // Default: the lead's own site appeared in the web-search results.
+    // Individual tests override this to prove the gate.
+    searchEvidenceUrls: lead.website ? [lead.website] : [],
     ...base(extra),
   });
 }
@@ -260,13 +265,19 @@ export default async function (req) {
     expect('fails closed on an OpenAI error', apiError.ok === false, apiError.reason);
 
     const refusal = parseOpenAIResponse({
-      output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'cannot assist' }] }],
+      output: [
+        { type: 'web_search_call', status: 'completed', action: { type: 'search', query: 'q', sources: [] } },
+        { type: 'message', content: [{ type: 'refusal', refusal: 'cannot assist' }] },
+      ],
       usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
     });
     expect('fails closed on an OpenAI refusal', refusal.ok === false && refusal.refusal === true, refusal.reason);
 
     const malformed = parseOpenAIResponse({
-      output: [{ type: 'message', content: [{ type: 'output_text', text: 'not json' }] }],
+      output: [
+        { type: 'web_search_call', status: 'completed', action: { type: 'search', query: 'q', sources: [] } },
+        { type: 'message', content: [{ type: 'output_text', text: 'not json' }] },
+      ],
     });
     expect('fails closed on malformed output', malformed.ok === false, malformed.reason);
 
@@ -275,6 +286,15 @@ export default async function (req) {
 
     const valid = parseOpenAIResponse({
       output: [
+        {
+          type: 'web_search_call',
+          status: 'completed',
+          action: {
+            type: 'search',
+            query: 'public golf courses in Sherman, TX',
+            sources: [{ type: 'url', url: 'https://pecangrovegc.com/' }],
+          },
+        },
         {
           type: 'message',
           content: [{ type: 'output_text', text: JSON.stringify({ leads: [{ ...COURSE_LEAD, category: 'course' }] }) }],
@@ -361,6 +381,158 @@ export default async function (req) {
       [{ id: 'x', name: 'Pecan Grove Golf Club', city: 'Sherman', address: '1234 Fairway Drive, Sherman, TX 75090', official_website: 'https://pecangrovegc.com' }]
     );
     expect('deduplicates by official domain / name / address', dupCheck.isDuplicate === true, dupCheck.reason);
+
+    // ============================================================
+    // REGRESSION 1 — a real web_search call is mandatory, and every
+    // approved lead must be backed by search evidence.
+    // ============================================================
+    const noSearchCall = parseOpenAIResponse({
+      output: [
+        {
+          type: 'message',
+          content: [{ type: 'output_text', text: JSON.stringify({ leads: [{ ...COURSE_LEAD }] }) }],
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+    });
+    expect(
+      'fails closed when the response contains no web_search call',
+      noSearchCall.ok === false && /web search/i.test(noSearchCall.reason),
+      noSearchCall.reason
+    );
+
+    const searchWithoutCitations = parseOpenAIResponse({
+      output: [
+        { type: 'web_search_call', status: 'completed', action: { type: 'search', query: 'q', sources: [] } },
+        { type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ leads: [] }) }] },
+      ],
+    });
+    expect(
+      'records the search call and reports zero cited URLs when none were returned',
+      searchWithoutCitations.ok === true &&
+        searchWithoutCitations.search_calls === 1 &&
+        searchWithoutCitations.evidence_urls.length === 0,
+      JSON.stringify({ calls: searchWithoutCitations.search_calls, urls: searchWithoutCitations.evidence_urls.length })
+    );
+
+    expect(
+      'counts a real search call and its cited URLs',
+      valid.search_calls === 1 && valid.evidence_urls.includes('https://pecangrovegc.com/'),
+      JSON.stringify({ calls: valid.search_calls, urls: valid.evidence_urls })
+    );
+
+    const leadNoEvidence = evalLead(COURSE_LEAD, COURSE_PAGE, COURSE_GEO, { searchEvidenceUrls: [] });
+    expect(
+      'never approves a lead with no web-search evidence',
+      leadNoEvidence.status === 'pending' && /web-search evidence/i.test(leadNoEvidence.reason),
+      `${leadNoEvidence.status}: ${leadNoEvidence.reason}`
+    );
+
+    const leadLookalikeEvidence = evalLead(COURSE_LEAD, COURSE_PAGE, COURSE_GEO, {
+      searchEvidenceUrls: ['https://x.com/biz/pecangrovegc'],
+    });
+    expect(
+      'a lookalike host cannot satisfy search evidence',
+      leadLookalikeEvidence.status === 'pending',
+      `${leadLookalikeEvidence.status}: ${leadLookalikeEvidence.reason}`
+    );
+
+    // ============================================================
+    // REGRESSION 2 — approval needs venue identity, page-supported
+    // category, and the address/ZIP used for geocoding. City alone
+    // is never enough, and the model's claims are never proof.
+    // ============================================================
+    const cityOnlyPage =
+      'Pecan Grove Golf Club is an 18-hole championship golf course serving Sherman, Texas. Call us to book a tee time.';
+    const cityOnly = evalLead(COURSE_LEAD, cityOnlyPage, COURSE_GEO);
+    expect(
+      'a city match alone is not enough to approve',
+      cityOnly.status === 'pending' && /address/i.test(cityOnly.reason),
+      `${cityOnly.status}: ${cityOnly.reason}`
+    );
+
+    const zipConfirmed = addressConfirmedOnPage(
+      'Green fees and directions. 1234 Fairway Drive, Sherman, TX 75090',
+      { postal_code: '75090' },
+      ''
+    );
+    expect('confirms an address by postal code', zipConfirmed.confirmed && zipConfirmed.method === 'postal_code', zipConfirmed.detail);
+
+    const streetConfirmed = addressConfirmedOnPage(
+      'Visit our clubhouse at 1234 Fairway Drive today.',
+      null,
+      '1234 Fairway Drive, Sherman, TX'
+    );
+    expect('confirms an address by street number and street name', streetConfirmed.confirmed && streetConfirmed.method === 'street_address', streetConfirmed.detail);
+
+    const cityTextOnly = addressConfirmedOnPage(
+      'We are located in Sherman, Texas.',
+      { postal_code: '75090' },
+      '1234 Fairway Drive, Sherman, TX 75090'
+    );
+    expect('refuses a city-only page as address confirmation', cityTextOnly.confirmed === false, cityTextOnly.detail);
+
+    const cityZIPMismatch = addressConfirmedOnPage(
+      'Pecan Grove Golf Club, Sherman, Texas. Postal code 75091.',
+      { postal_code: '75090' },
+      '1234 Fairway Drive, Sherman, TX 75090'
+    );
+    expect('a different postal code does not confirm the geocoded address', cityZIPMismatch.confirmed === false, cityZIPMismatch.detail);
+
+    const wrongVenuePage =
+      'Cedar Creek Links is an 18-hole golf course in Sherman, Texas at 1234 Fairway Drive, Sherman, TX 75090.';
+    const wrongVenue = evalLead(COURSE_LEAD, wrongVenuePage, COURSE_GEO);
+    expect(
+      'leaves a lead pending when the official page does not name the venue',
+      wrongVenue.status === 'pending' && /name/i.test(wrongVenue.reason),
+      `${wrongVenue.status}: ${wrongVenue.reason}`
+    );
+
+    const claimNotOnPage = evalLead({ ...COURSE_LEAD, category: 'indoor_simulator' }, COURSE_PAGE, COURSE_GEO);
+    expect(
+      'the model category claim is not accepted without page support',
+      claimNotOnPage.status === 'pending' && /category/i.test(claimNotOnPage.reason),
+      `${claimNotOnPage.status}: ${claimNotOnPage.reason}`
+    );
+
+    const noClaim = evalLead({ ...COURSE_LEAD, category: 'other' }, COURSE_PAGE, COURSE_GEO);
+    expect(
+      'resolves the category from the page when the model claims none',
+      noClaim.status === 'accepted' && noClaim.discoveryCategory === 'course',
+      `${noClaim.status}: ${noClaim.discoveryCategory} — ${noClaim.reason}`
+    );
+
+    // ============================================================
+    // REGRESSION 3 — every image redirect destination must pass the
+    // same public-URL/SSRF rules as official-page fetches.
+    // ============================================================
+    const unsafeImageDestinations = [
+      'http://169.254.169.254/latest/meta-data/',
+      'http://127.0.0.1/photo.jpg',
+      'http://10.0.0.5/photo.jpg',
+      'http://192.168.1.20/photo.jpg',
+      'http://172.16.4.9/photo.jpg',
+      'http://localhost:8080/photo.jpg',
+      'https://www.instagram.com/photo.jpg',
+      'https://images.unsplash.com/photo-1.jpg',
+    ];
+    for (const url of unsafeImageDestinations) {
+      const gate = isSafeImageDestination(url);
+      expect(`rejects an unsafe image destination: ${url}`, gate.safe === false, gate.reason);
+    }
+
+    const safeImageDestination = isSafeImageDestination('https://cdn.pecangrovegc.com/photo.jpg');
+    expect('accepts a public image destination', safeImageDestination.safe === true, safeImageDestination.reason);
+
+    const privateImage = await checkImageUrl('http://169.254.169.254/latest/meta-data/');
+    expect(
+      'rejects an image whose first hop is a private address',
+      privateImage.ok === false && /destination|blocked/i.test(privateImage.reason),
+      privateImage.reason
+    );
+
+    const stockImage = await checkImageUrl('https://images.unsplash.com/photo-1.jpg');
+    expect('rejects a stock-photo image host', stockImage.ok === false, stockImage.reason);
 
     const passed = results.filter((r) => r.pass).length;
     const failed = results.length - passed;
