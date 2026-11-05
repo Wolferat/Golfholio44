@@ -24,6 +24,7 @@ import {
   evaluateLead,
   extractOfficialBookingUrl,
 } from '../../shared/officialSourceVerification.ts';
+import { COST_CAP_USD, estimateJobCost } from '../../shared/usageBudget.ts';
 
 // ============================================================
 // shermanDiscoveryRun — admin-only, one-time, resumable import.
@@ -81,6 +82,9 @@ async function buildSummary(base44: any, job: any, status: string, note = '') {
     rejected: Number(job.rejected_count) || 0,
     duplicate: Number(job.duplicate_count) || 0,
     truncated_leads: Number(job.truncated_leads) || 0,
+    estimated_cost_usd: estimateJobCost(job),
+    cost_cap_usd: COST_CAP_USD,
+    remaining_cost_usd: Math.max(0, Math.round((COST_CAP_USD - estimateJobCost(job)) * 10000) / 10000),
     ceiling_hit: status === 'completed_with_ceiling',
     note,
   };
@@ -274,6 +278,22 @@ export default async function (req) {
         });
       }
 
+      // Hard spend ceiling: stop before spending, not after.
+      if (estimateJobCost(job) >= COST_CAP_USD) {
+        const capped = await finalizeJob(
+          base44,
+          job,
+          'completed_with_ceiling',
+          `$${COST_CAP_USD} spend cap reached; unrun queries are listed in the summary`
+        );
+        return Response.json({
+          job: capped,
+          terminal: true,
+          summary: await buildSummary(base44, capped, 'completed_with_ceiling'),
+          candidates: await loadJobCandidates(base44, job.id),
+        });
+      }
+
       // ---------------- ONE QUERY ----------------
       const current = planned[Number(job.query_index) || 0];
       const ai = await callOpenAIWebSearch(apiKey, current.query, job.openai_model || DEFAULT_OPENAI_MODEL);
@@ -329,8 +349,12 @@ export default async function (req) {
       }
 
       const geocodeKey = secrets.get('GOOGLE_PLACES_API_KEY') || '';
+      // Quarantined and rejected records must not block a genuine venue:
+      // dedup matches on normalized name + city across every record.
       const existingListings = asItems(
-        await base44.asServiceRole.entities.Listing.filter({}).catch(() => [])
+        await base44.asServiceRole.entities.Listing
+          .filter({ status: { $nin: ['archived', 'rejected', 'flagged'] } })
+          .catch(() => [])
       );
 
       // Autonomous-mode kill switch. When auto_publish_enabled is false the
@@ -530,6 +554,9 @@ export default async function (req) {
       } else if (callsUsed >= (Number(job.max_openai_calls) || 0)) {
         nextStatus = 'completed_with_ceiling';
         note = 'OpenAI call ceiling reached; unrun queries are reported in the summary';
+      } else if (estimateJobCost({ ...job, ...patch }) >= COST_CAP_USD) {
+        nextStatus = 'completed_with_ceiling';
+        note = `$${COST_CAP_USD} spend cap reached; unrun queries are reported in the summary`;
       }
 
       const patched = await base44.asServiceRole.entities.DiscoveryJob.update(job.id, {
@@ -542,6 +569,27 @@ export default async function (req) {
       const finalJob = TERMINAL.has(nextStatus)
         ? await finalizeJob(base44, nextJob, nextStatus, note)
         : patched;
+
+      // Compact step result: lets the import be driven query-by-query
+      // without streaming the whole job and candidate table each time.
+      if (body.terse === true) {
+        return Response.json({
+          terminal: TERMINAL.has(nextStatus),
+          status: nextStatus,
+          step,
+          progress: {
+            queries_completed: nextIndex,
+            queries_total: planned.length,
+            accepted: patch.accepted_count,
+            rejected: patch.rejected_count,
+            duplicate: patch.duplicate_count,
+            candidates: patch.candidates_found,
+            estimated_cost_usd: estimateJobCost({ ...job, ...patch }),
+            cost_cap_usd: COST_CAP_USD,
+            note,
+          },
+        });
+      }
 
       return Response.json({
         job: finalJob,

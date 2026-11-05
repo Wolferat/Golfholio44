@@ -169,6 +169,12 @@ const NON_GOLF_PATTERNS = [
   'apartment', 'realt', 'storage', 'warehouse', 'grocery', 'supermarket',
   'walmart', 'target ', 'car wash', 'tire ', 'automotive',
   'funeral', 'cemetery', 'mortuary',
+  // Retail chains, outlets and storefront services — never venues.
+  'subway', 'home depot', 'u-haul', 'at&t', 'buckle', 'crocs', 'perfumania',
+  'lane bryant', 'famous footwear', 'vitamin world', 'little caesars', 'braum',
+  'rocky mountain chocolate', 'midway mall', 'shops at', 'outlet center',
+  'jackson hewitt', 'trade days', 'haunted', 'christmas tree farm',
+  'karting', 'visitors center', 'donut', 'nail salon', 'insurance',
 ];
 
 const GOLF_NAME_SIGNALS = [
@@ -176,6 +182,11 @@ const GOLF_NAME_SIGNALS = [
   'fairway', 'putting green', 'simulator', 'golf academy', 'putt',
   'topgolf', 'golf lounge', 'club fitting', 'pro shop',
 ];
+
+export function hasGolfNameSignal(name: string): boolean {
+  const lower = String(name || '').toLowerCase();
+  return GOLF_NAME_SIGNALS.some((k) => lower.includes(k));
+}
 
 export function classifyLeadName(name: string): { excluded: boolean; reason: string } {
   const lower = String(name || '').toLowerCase();
