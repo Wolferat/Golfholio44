@@ -12,7 +12,7 @@ import {
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { reverifyDiscoveryCandidates, reviewDiscoveryCandidate } from '@/lib/golfData';
+import { reverifyDiscoveryCandidates, reviewDiscoveryCandidate, findLocalDiscoveryCandidates } from '@/lib/golfData';
 
 // Rejection reasons a resolved street address can fix. Everything else
 // is already decided and is never re-run.
@@ -74,6 +74,22 @@ export default function AdminApprovalQueue() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const runScan = async () => {
+    setBusy('scan');
+    setError('');
+    setNote('');
+    try {
+      const res = await findLocalDiscoveryCandidates({ limit: 10 });
+      setNote(
+        `${res.places_found} golf venues within 30 mi · ${res.awaiting_approval} new awaiting approval · ${res.duplicates} already listed · ${res.rejected} not verifiable`
+      );
+      await load();
+    } catch (e) {
+      setError(errText(e));
+    }
+    setBusy('');
+  };
 
   const runReverify = async () => {
     setBusy('reverify');
@@ -152,6 +168,11 @@ export default function AdminApprovalQueue() {
             </Button>
           </div>
         )}
+
+        <Button variant="secondary" className="h-9 w-full mt-2" disabled={!!busy} onClick={runScan}>
+          {busy === 'scan' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
+          Scan for new venues within 30 mi
+        </Button>
       </div>
 
       {error && (

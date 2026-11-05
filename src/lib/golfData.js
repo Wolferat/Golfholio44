@@ -134,6 +134,11 @@ export async function reviewDiscoveryCandidate(params) {
   return res.data;
 }
 
+export async function findLocalDiscoveryCandidates(params = {}) {
+  const res = await base44.functions.invoke('localDiscoveryCandidates', params);
+  return res.data;
+}
+
 export async function getShermanDiscoveryStatus(job_id) {
   const res = await base44.functions.invoke('shermanDiscoveryRun', { action: 'status', job_id });
   return res.data;

@@ -38,6 +38,8 @@ export interface CandidateVerificationInput {
   jobId?: string;
   // The run caps source fetches per query; false skips the fetch.
   canFetchSource?: boolean;
+  // Places-sourced leads have a place_id, not a web-search trail.
+  requireSearchEvidence?: boolean;
   nowIso?: string;
 }
 
@@ -79,6 +81,7 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
       nowIso: input.nowIso,
       sourceError: doc && !doc.ok ? doc.reason : '',
       requireCoordinateAgreement,
+      requireSearchEvidence: input.requireSearchEvidence,
     });
 
   let evaluation = run(doc?.ok ? doc.text : '', doc?.ok ? doc.html : '');

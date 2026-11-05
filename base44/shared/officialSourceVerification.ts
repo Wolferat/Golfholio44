@@ -85,6 +85,10 @@ export interface LeadEvaluationInput {
   // Whether the lead's own coordinates must agree with the verified
   // address. Only meaningful when the lead supplied its own address.
   requireCoordinateAgreement?: boolean;
+  // Model leads must be shown to have come from a real web search. A
+  // lead sourced from Google Places carries a place_id instead, so the
+  // search-evidence rule does not apply to it.
+  requireSearchEvidence?: boolean;
 }
 
 export interface LeadEvaluationResult {
@@ -388,7 +392,9 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
 
   // The lead must originate from a real web search that actually surfaced
   // this venue's official site. A model-invented lead cannot pass this.
-  const searchEvidence = leadHasSearchEvidence(lead, input.searchEvidenceUrls || []);
+  const searchEvidence = input.requireSearchEvidence === false
+    ? { matched: true, reason: '' }
+    : leadHasSearchEvidence(lead, input.searchEvidenceUrls || []);
   if (!add('search_evidence', searchEvidence.matched, searchEvidence.reason)) {
     return deny('pending', `no web-search evidence: ${searchEvidence.reason}`, { corroboration });
   }
