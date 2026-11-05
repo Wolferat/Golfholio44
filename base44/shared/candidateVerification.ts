@@ -90,11 +90,22 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
   };
 
   const resolved = await resolveLeadAddress({ placesKey: input.placesKey, lead: merged });
+  // When the lead's own address cannot be geocoded (no postal code, a
+  // partial street line) but Google knows this business, Google's canonical
+  // address is the second source doing its job — never a guess.
+  let placeResolved = resolved;
+  if (!resolved?.geocoded && place?.formatted_address) {
+    const second = await resolveLeadAddress({
+      placesKey: input.placesKey,
+      lead: { ...merged, address: place.formatted_address },
+    }).catch(() => null);
+    if (second?.geocoded) placeResolved = second;
+  }
   const lead = {
     ...merged,
-    address: resolved?.address || merged.address,
-    city: merged.city || resolved?.city || '',
-    state: merged.state || resolved?.state || '',
+    address: placeResolved?.address || merged.address,
+    city: merged.city || placeResolved?.city || '',
+    state: merged.state || placeResolved?.state || '',
   };
 
   // The lead's own coordinates only have to agree when the lead carried
@@ -111,7 +122,7 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
       center: input.center,
       radiusMi: input.radiusMi,
       existingListings: input.existingListings,
-      geocoded: resolved?.geocoded || null,
+      geocoded: placeResolved?.geocoded || null,
       searchEvidenceUrls: input.searchEvidenceUrls || [],
       jobId: input.jobId,
       bookingUrl: html && doc?.ok ? extractOfficialBookingUrl(html, doc.finalUrl) : '',
@@ -137,5 +148,5 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
     }
   }
 
-  return { lead, website, doc, resolved, evaluation, fetchesUsed, enrichment };
+  return { lead, website, doc, resolved: placeResolved, evaluation, fetchesUsed, enrichment };
 }
