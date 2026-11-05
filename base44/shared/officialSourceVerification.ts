@@ -80,6 +80,11 @@ export interface LeadEvaluationInput {
   jobId?: string;
   bookingUrl?: string;
   nowIso?: string;
+  // Why the official page could not be read, when it could not.
+  sourceError?: string;
+  // Whether the lead's own coordinates must agree with the verified
+  // address. Only meaningful when the lead supplied its own address.
+  requireCoordinateAgreement?: boolean;
 }
 
 export interface LeadEvaluationResult {
@@ -202,6 +207,31 @@ export function addressConfirmedOnPage(
       ? `official page shows neither postal code ${zip || '(none)'} nor street address "${addressSource}"`
       : 'no geocodable address or postal code was available to confirm',
   };
+}
+
+// Find a same-site contact / directions / visit page. Club home pages
+// frequently list no address while their contact page does.
+export function findContactPageUrl(html: string, officialUrl: string): string {
+  if (!html || !officialUrl) return '';
+  const officialHost = hostOf(officialUrl);
+  if (!officialHost) return '';
+
+  const anchorRe = /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,160}?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = anchorRe.exec(html)) !== null) {
+    const href = m[1];
+    const label = String(m[2] || '').replace(/<[^>]+>/g, ' ').toLowerCase();
+    if (!/contact|direction|location|visit|find\s*us|about/.test(`${href.toLowerCase()} ${label}`)) continue;
+    let abs: string;
+    try {
+      abs = new URL(href, officialUrl).href;
+    } catch {
+      continue;
+    }
+    const host = hostOf(abs);
+    if (host === officialHost || host.endsWith(`.${officialHost}`)) return abs;
+  }
+  return '';
 }
 
 // Find an official booking/tee-time link on the same site. A
@@ -349,8 +379,11 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
     address: lead.address,
     phone: lead.phone,
   });
-  if (!add('source_corroborated', corroboration.corroborated, `official page did not corroborate venue: ${corroboration.reason}`)) {
-    return deny('pending', `official page did not corroborate venue: ${corroboration.reason}`, { corroboration });
+  const corroborationReason = input.sourceError
+    ? `official site could not be read: ${input.sourceError}`
+    : `official page did not corroborate venue: ${corroboration.reason}`;
+  if (!add('source_corroborated', corroboration.corroborated, corroborationReason)) {
+    return deny('pending', corroborationReason, { corroboration });
   }
 
   // The lead must originate from a real web search that actually surfaced
@@ -411,7 +444,12 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
   }
   add('coordinates_verified', true);
 
-  if (isFiniteNumber(lead.latitude) && isFiniteNumber(lead.longitude)) {
+  const leadHasCoords = isFiniteNumber(lead.latitude) && isFiniteNumber(lead.longitude);
+  // Agreement is only meaningful when the lead supplied its own address:
+  // then the address and the coordinates are two independent facts. A
+  // coordinate the model guessed is not evidence against an address the
+  // official page confirms, so it cannot veto the venue.
+  if (leadHasCoords && input.requireCoordinateAgreement !== false) {
     const disagreement = haversineMi(lead.latitude, lead.longitude, coords.lat, coords.lng);
     if (!add('coordinate_agreement', disagreement <= MAX_COORDINATE_DISAGREEMENT_MI,
       `source disagreement: model coordinates differ from verified address by ${round1(disagreement)} mi`)) {

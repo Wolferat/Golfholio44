@@ -65,6 +65,12 @@ const UNTRUSTED_HOSTS = [
   'youtube.com', 'wikipedia.org', 'foursquare.com', 'yellowpages.com',
   'mapquest.com', 'bing.com/maps', 'apple.com/maps', 'superpages.com',
   'business.google.com', 'plus.google.com',
+  // Golf directories, aggregators and media — never a venue's own site.
+  // A listing whose only "website" is one of these has no official source.
+  'fairwaydb.com', 'golftrips.com', 'golfnow.com', 'teeoff.com',
+  'golfadvisor.com', 'golflink.com', 'golfpass.com', 'worldgolf.com',
+  'golfchannel.com', 'golfdigest.com', 'golf.com', 'supremegolf.com',
+  'tgn.com', 'golfrange.org', 'golfsherpa.com', 'teetimes.com',
 ];
 
 function isTrustedSourceUrl(u) {

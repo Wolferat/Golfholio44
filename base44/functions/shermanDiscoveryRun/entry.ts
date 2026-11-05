@@ -384,8 +384,8 @@ export default async function (req) {
           const doc = verified.doc;
           const evaluation = verified.evaluation;
           const resolvedLead = verified.lead;
-          if (doc?.ok) step.source_fetches++;
-          let geocoded = verified.resolved?.geocoded || null;
+          step.source_fetches += verified.fetchesUsed;
+          const geocoded = verified.resolved?.geocoded || null;
 
           const duplicateInJob = asItems(
             await base44.asServiceRole.entities.DiscoveryCandidate

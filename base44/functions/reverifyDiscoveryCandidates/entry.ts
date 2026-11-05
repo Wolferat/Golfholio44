@@ -96,7 +96,14 @@ export default async function (req) {
     );
 
     const retryable = rejected.filter(isRetryableCandidate);
-    const queue = retryable.slice(0, limit);
+    // An explicit id list overrides the automatic selection: it is how a
+    // specific venue is re-checked on demand.
+    const requestedIds = Array.isArray(body.candidate_ids)
+      ? body.candidate_ids.map((v: any) => String(v)).filter(Boolean).slice(0, MAX_PER_CALL)
+      : [];
+    const queue = requestedIds.length > 0
+      ? rejected.filter((c) => requestedIds.includes(c.id))
+      : retryable.slice(0, limit);
 
     const existingListings = asItems(
       await base44.asServiceRole.entities.Listing
