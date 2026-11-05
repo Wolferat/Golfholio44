@@ -100,6 +100,34 @@ export async function moderateReview(reviewId, action, reason) {
   return res.data;
 }
 
+// ============================================================
+// Sherman one-time import — admin only (preview is read-only)
+// ============================================================
+export async function previewShermanDiscovery(params = {}) {
+  const res = await base44.functions.invoke('shermanDiscoveryPreview', params);
+  return res.data;
+}
+
+export async function startShermanDiscovery(params) {
+  const res = await base44.functions.invoke('shermanDiscoveryRun', { action: 'create', ...params });
+  return res.data;
+}
+
+export async function stepShermanDiscovery(job_id) {
+  const res = await base44.functions.invoke('shermanDiscoveryRun', { action: 'step', job_id });
+  return res.data;
+}
+
+export async function stopShermanDiscovery(job_id) {
+  const res = await base44.functions.invoke('shermanDiscoveryRun', { action: 'stop', job_id });
+  return res.data;
+}
+
+export async function getShermanDiscoveryStatus(job_id) {
+  const res = await base44.functions.invoke('shermanDiscoveryRun', { action: 'status', job_id });
+  return res.data;
+}
+
 export async function getHandicapEstimate() {
   const res = await base44.functions.invoke('getHandicapEstimate', {});
   return res.data;

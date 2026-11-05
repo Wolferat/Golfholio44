@@ -352,19 +352,37 @@ export function evaluateCorroboration(
   };
 }
 
-// Fetch the source URL with SSRF hardening: validate every URL (initial +
-// each redirect hop) against the public-destination check, follow at most
-// 5 redirects, cap response body at 1 MB, timeout at 8 s. Fail closed on
-// any DNS, redirect, parse, or fetch uncertainty. Safe failure reasons
-// do not expose internal network details.
-export async function corroborateSourceUrl(sourceUrl: string, listing: any): Promise<CorroborationResult> {
+// ------------------------------------------------------------
+// SSRF-hardened source document fetch.
+//
+// Validates the initial URL and every redirect hop against the
+// public-destination check, follows at most 5 redirects, caps the
+// response body at 1 MB, and times out at 8 s. Fails closed on any
+// DNS, redirect, parse, or fetch uncertainty. Failure reasons are
+// safe and never expose internal network details.
+//
+// Exported so every official-source consumer (corroboration, the
+// discovery import, tests) uses the same hardened fetch instead of
+// duplicating redirect/SSRF logic.
+// ------------------------------------------------------------
+export interface SourceDocumentResult {
+  ok: boolean;
+  html: string;
+  text: string;
+  finalUrl: string;
+  reason: string;
+  urlBlocked?: boolean;
+  redirectBlocked?: boolean;
+  tooManyRedirects?: boolean;
+  httpStatus?: number;
+  fetchError?: boolean;
+}
+
+export async function fetchSourceDocument(sourceUrl: string): Promise<SourceDocumentResult> {
   const initialCheck = await validatePublicUrl(sourceUrl);
   if (!initialCheck.valid) {
-    return { corroborated: false, reason: initialCheck.reason, evidence: { urlBlocked: true } };
+    return { ok: false, html: '', text: '', finalUrl: sourceUrl, reason: initialCheck.reason, urlBlocked: true };
   }
-
-  let sourceHost = '';
-  try { sourceHost = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
 
   try {
     let currentUrl = sourceUrl;
@@ -374,7 +392,7 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       const hopCheck = await validatePublicUrl(currentUrl);
       if (!hopCheck.valid) {
-        return { corroborated: false, reason: hopCheck.reason, evidence: { redirectBlocked: true } };
+        return { ok: false, html: '', text: '', finalUrl: currentUrl, reason: hopCheck.reason, redirectBlocked: true };
       }
 
       response = await fetch(currentUrl, {
@@ -385,16 +403,16 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
         if (!location) {
-          return { corroborated: false, reason: 'redirect missing location header', evidence: { fetchError: true } };
+          return { ok: false, html: '', text: '', finalUrl: currentUrl, reason: 'redirect missing location header', fetchError: true };
         }
         let nextUrl: string;
         try {
           nextUrl = new URL(location, currentUrl).href;
         } catch {
-          return { corroborated: false, reason: 'invalid redirect URL', evidence: { fetchError: true } };
+          return { ok: false, html: '', text: '', finalUrl: currentUrl, reason: 'invalid redirect URL', fetchError: true };
         }
         if (hop === MAX_REDIRECTS) {
-          return { corroborated: false, reason: 'too many redirects', evidence: { tooManyRedirects: true } };
+          return { ok: false, html: '', text: '', finalUrl: currentUrl, reason: 'too many redirects', tooManyRedirects: true };
         }
         currentUrl = nextUrl;
         continue;
@@ -404,11 +422,8 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
 
     if (!response || !response.ok) {
       const status = response?.status || 0;
-      return { corroborated: false, reason: `HTTP ${status}`, evidence: { httpStatus: status } };
+      return { ok: false, html: '', text: '', finalUrl: currentUrl, reason: `HTTP ${status}`, httpStatus: status };
     }
-
-    let finalHost = '';
-    try { finalHost = new URL(currentUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
 
     // Read at most 1 MB of response body
     const MAX_SIZE = 1024 * 1024;
@@ -422,10 +437,36 @@ export async function corroborateSourceUrl(sourceUrl: string, listing: any): Pro
       .replace(/&#?\w+;/g, ' ')
       .replace(/\s+/g, ' ');
 
-    return evaluateCorroboration(text, sourceHost, finalHost, listing);
+    return { ok: true, html, text, finalUrl: currentUrl, reason: '' };
   } catch (e: any) {
-    return { corroborated: false, reason: 'fetch error', evidence: { fetchError: true } };
+    return { ok: false, html: '', text: '', finalUrl: sourceUrl, reason: 'fetch error', fetchError: true };
   }
+}
+
+// Fetch the source URL with SSRF hardening and corroborate venue
+// identity. Uses the single hardened fetch above.
+export async function corroborateSourceUrl(sourceUrl: string, listing: any): Promise<CorroborationResult> {
+  const doc = await fetchSourceDocument(sourceUrl);
+  if (!doc.ok) {
+    return {
+      corroborated: false,
+      reason: doc.reason,
+      evidence: {
+        urlBlocked: doc.urlBlocked,
+        redirectBlocked: doc.redirectBlocked,
+        tooManyRedirects: doc.tooManyRedirects,
+        httpStatus: doc.httpStatus,
+        fetchError: doc.fetchError,
+      },
+    };
+  }
+
+  let sourceHost = '';
+  try { sourceHost = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
+  let finalHost = '';
+  try { finalHost = new URL(doc.finalUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
+
+  return evaluateCorroboration(doc.text, sourceHost, finalHost, listing);
 }
 
 export interface VerificationDecision {

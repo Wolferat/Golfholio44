@@ -181,6 +181,22 @@
     "official_website": {
       "type": "string"
     },
+    "official_domain": {
+      "type": "string",
+      "description": "Durable identity: registrable host of the official website, used for import deduplication."
+    },
+    "discovery_category": {
+      "type": "string",
+      "description": "Exact category verified from the official source: course | indoor_simulator | driving_range | golf_instruction."
+    },
+    "booking_url": {
+      "type": "string",
+      "description": "Official tee-time/booking URL only when independently found on the official site."
+    },
+    "hours": {
+      "type": "string",
+      "description": "Operating hours only when explicitly supported by an official source."
+    },
     "official_registration_url": {
       "type": "string"
     },
