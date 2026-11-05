@@ -198,7 +198,12 @@ export default async function (req) {
 
         report.decision = evaluation.status;
         report.reason = evaluation.reason;
-        report.checks = evaluation.checks;
+        report.checks = {
+          passed: evaluation.checks.filter((c: any) => c.pass).map((c: any) => c.key),
+          failed: evaluation.checks
+            .filter((c: any) => !c.pass)
+            .map((c: any) => ({ key: c.key, reason: c.reason })),
+        };
         report.resolved_category = evaluation.discoveryCategory;
         report.distance_miles = evaluation.distanceMiles;
 
@@ -212,7 +217,7 @@ export default async function (req) {
             attribution: p.attribution,
             reason: p.reason,
           }));
-          report.photos.rejected = photos.rejected.slice(0, 5).map((p: any) => ({
+          report.photos.rejected = photos.rejected.slice(0, 3).map((p: any) => ({
             url: p.photo_url,
             reason: p.reason,
           }));
@@ -225,23 +230,52 @@ export default async function (req) {
       decisions.push(report);
     }
 
+    const summary = {
+      accepted: decisions.filter((d) => d.decision === 'accepted').length,
+      pending: decisions.filter((d) => d.decision === 'pending').length,
+      rejected: decisions.filter((d) => d.decision === 'rejected').length,
+      duplicate: decisions.filter((d) => d.decision === 'duplicate').length,
+      photos_accepted: decisions.reduce((n, d) => n + d.photos.accepted.length, 0),
+    };
+
+    // Full detail goes to the log stream; the HTTP body stays compact
+    // enough to read in full.
+    console.log(
+      'SHERRMAN_SMOKE_FULL ' +
+        JSON.stringify({ search_call: searchCall, decisions, cost, summary })
+    );
+
+    const compact = decisions.map((d) => ({
+      name: d.name,
+      website: d.website,
+      page: `${d.page?.ok ? 'ok' : 'fail'} ${d.page?.http_status || ''}`.trim(),
+      geo: d.geocoded_address
+        ? d.geocoded_address.error
+          ? d.geocoded_address.error
+          : `${d.geocoded_address.street_line}, ${d.geocoded_address.postal_code}`
+        : 'none',
+      decision: d.decision,
+      reason: d.reason,
+      failed_checks: (d.checks?.failed || []).map((c: any) => c.key),
+      photos: d.photos.accepted.map((p: any) => p.url),
+      photos_rejected: d.photos.rejected.length,
+    }));
+
     return Response.json({
       smoke: true,
       no_writes_made: true,
       openai_ok: true,
-      search_call: searchCall,
+      search_call: {
+        query: searchCall.query,
+        model: searchCall.model,
+        web_search_calls: searchCall.web_search_calls,
+        evidence_urls: searchCall.evidence_urls,
+      },
       leads_returned: ai.leads.length,
       leads_evaluated: decisions.length,
-      leads_not_evaluated: Math.max(0, Math.min(ai.leads.length, MAX_LEADS_PER_QUERY) - decisions.length),
-      decisions,
+      decisions: compact,
       cost,
-      summary: {
-        accepted: decisions.filter((d) => d.decision === 'accepted').length,
-        pending: decisions.filter((d) => d.decision === 'pending').length,
-        rejected: decisions.filter((d) => d.decision === 'rejected').length,
-        duplicate: decisions.filter((d) => d.decision === 'duplicate').length,
-        photos_accepted: decisions.reduce((n, d) => n + d.photos.accepted.length, 0),
-      },
+      summary,
     });
   } catch (error: any) {
     return Response.json({ error: error.message }, { status: 500 });

@@ -323,7 +323,13 @@ export function buildOpenAIRequestBody(query: string, model = DEFAULT_OPENAI_MOD
   return {
     model: model || DEFAULT_OPENAI_MODEL,
     tools: [{ type: 'web_search' }],
-    tool_choice: 'auto',
+    // Force the search: an answer produced without a web_search call is
+    // never accepted as discovery evidence.
+    tool_choice: { type: 'web_search' },
+    // Ask the API to expand the URLs the search actually surfaced. Without
+    // this the response carries no citable sources, and every lead would
+    // fail the per-lead evidence gate.
+    include: ['web_search_call.action.sources'],
     input: `${instructions}\n\nSearch query: ${query}`,
     text: {
       format: {
