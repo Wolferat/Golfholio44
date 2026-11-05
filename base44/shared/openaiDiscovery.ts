@@ -21,13 +21,13 @@ export const DEFAULT_IMPORT_RADIUS_MI = 30;
 export const MIN_IMPORT_RADIUS_MI = 5;
 export const MAX_IMPORT_RADIUS_MI = 30;
 
-export const DEFAULT_MAX_OPENAI_CALLS = 24;
+export const DEFAULT_MAX_OPENAI_CALLS = 34;
 export const MAX_OPENAI_CALLS_CEILING = 40;
-export const DEFAULT_MAX_CANDIDATES = 120;
-export const MAX_CANDIDATES_CEILING = 200;
+export const DEFAULT_MAX_CANDIDATES = 220;
+export const MAX_CANDIDATES_CEILING = 240;
 
-export const MAX_LEADS_PER_QUERY = 8;
-export const MAX_SOURCE_FETCHES_PER_QUERY = 8;
+export const MAX_LEADS_PER_QUERY = 10;
+export const MAX_SOURCE_FETCHES_PER_QUERY = 10;
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
 
@@ -42,12 +42,26 @@ export const IMPORT_TILES = [
   { city: 'Bonham', state: 'TX', lat: 33.5773, lng: -96.1783 },
 ];
 
+// Seven golf verticals. Each lane has its own query phrase, its own page
+// vocabulary (CATEGORY_SIGNALS), and its own published entity type.
 export const DISCOVERY_CATEGORIES = [
-  { key: 'course', entity_type: 'course', phrase: 'public golf courses' },
-  { key: 'indoor_simulator', entity_type: 'simulator', phrase: 'indoor golf simulators' },
-  { key: 'driving_range', entity_type: 'golf_related_venue', phrase: 'golf driving ranges' },
+  { key: 'course', entity_type: 'course', phrase: 'public and private golf courses' },
+  { key: 'indoor_simulator', entity_type: 'simulator', phrase: 'indoor golf simulators and golf lounges' },
+  { key: 'driving_range', entity_type: 'golf_related_venue', phrase: 'golf driving ranges and practice facilities' },
   { key: 'golf_instruction', entity_type: 'training', phrase: 'golf lessons and instruction academies' },
+  { key: 'mini_golf', entity_type: 'golf_related_venue', phrase: 'mini golf and putting courses' },
+  { key: 'entertainment_golf', entity_type: 'simulator', phrase: 'Topgolf-style entertainment golf and golf driving bays' },
+  { key: 'golf_retail_fitting', entity_type: 'golf_related_venue', phrase: 'golf shops and club fitting studios' },
 ];
+
+// The two anchor cities get every lane. The outer tiles get the four
+// highest-yield lanes so the plan stays inside the call ceiling.
+export const FULL_LANE_TILES = ['Sherman', 'Denison'];
+export const STANDARD_LANES = ['course', 'indoor_simulator', 'driving_range', 'entertainment_golf'];
+
+// Appended to every query to suppress the two contamination modes seen in
+// live runs: disc golf and cemetery listings.
+export const NEGATIVE_TERMS = '-disc -cemetery -funeral';
 
 export function haversineMi(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -104,25 +118,39 @@ export function planQueryPlan(radiusMiles: any) {
   }
 
   const queries: any[] = [];
+  const lanesByTile: Record<string, string[]> = {};
   for (const tile of tilesIncluded) {
-    for (const cat of DISCOVERY_CATEGORIES) {
+    const laneSet = FULL_LANE_TILES.includes(tile.city)
+      ? DISCOVERY_CATEGORIES
+      : DISCOVERY_CATEGORIES.filter((c) => STANDARD_LANES.includes(c.key));
+    lanesByTile[`${tile.city}, ${tile.state}`] = laneSet.map((c) => c.key);
+    for (const cat of laneSet) {
       queries.push({
         category: cat.key,
+        entity_type: cat.entity_type,
+        coverage: FULL_LANE_TILES.includes(tile.city) ? 'full' : 'standard',
         tile: `${tile.city}, ${tile.state}`,
-        query: `${cat.phrase} in ${tile.city}, ${tile.state}`,
+        query: `${cat.phrase} in ${tile.city}, ${tile.state} ${NEGATIVE_TERMS}`,
       });
     }
   }
 
-  return { radius, tilesIncluded, tilesSkipped, queries };
+  return { radius, tilesIncluded, tilesSkipped, queries, lanesByTile };
 }
 
 // ------------------------------------------------------------
 // Name-based exclusions. These run BEFORE any network call so an
 // obviously out-of-scope business never costs an API call.
 // ------------------------------------------------------------
+// Mini golf is now an in-scope lane, so it is no longer a hard exclude.
 const HARD_EXCLUDE_PATTERNS = [
-  'disc golf', 'discgolf', 'mini golf', 'miniature golf', 'putt-putt', 'putt putt',
+  'disc golf', 'discgolf',
+];
+
+// Never published, whatever else the record looks like.
+const UNSAFE_EXCLUDE_PATTERNS = [
+  'gun range', 'guns', 'gun shop', 'gun club', 'firearm', 'shooting range',
+  'ammunition', 'ammo ', 'sportsbook', 'liquor store', 'casino',
 ];
 
 const ADULT_EXCLUDE_PATTERNS = [
@@ -145,7 +173,8 @@ const NON_GOLF_PATTERNS = [
 
 const GOLF_NAME_SIGNALS = [
   'golf', 'country club', 'driving range', 'tee time', 'par 3', 'links',
-  'fairway', 'putting green', 'simulator', 'golf academy',
+  'fairway', 'putting green', 'simulator', 'golf academy', 'putt',
+  'topgolf', 'golf lounge', 'club fitting', 'pro shop',
 ];
 
 export function classifyLeadName(name: string): { excluded: boolean; reason: string } {
@@ -157,6 +186,9 @@ export function classifyLeadName(name: string): { excluded: boolean; reason: str
 
   const adult = ADULT_EXCLUDE_PATTERNS.find((p) => lower.includes(p));
   if (adult) return { excluded: true, reason: 'adult/unsafe business signal' };
+
+  const unsafe = UNSAFE_EXCLUDE_PATTERNS.find((p) => lower.includes(p));
+  if (unsafe) return { excluded: true, reason: `excluded business type: ${unsafe.trim()}` };
 
   const golfSignal = GOLF_NAME_SIGNALS.some((k) => lower.includes(k));
   const nonGolf = NON_GOLF_PATTERNS.find((p) => lower.includes(p));
@@ -182,7 +214,33 @@ export const CATEGORY_SIGNALS: Record<string, string[]> = {
     'golf lesson', 'lessons', 'instruction', 'academy', 'coaching', 'golf clinic',
     'pga professional', 'teaching professional', 'golf school',
   ],
+  mini_golf: [
+    'mini golf', 'miniature golf', 'putt-putt', 'putt putt', 'putting course',
+    'adventure golf', 'mini-golf',
+  ],
+  entertainment_golf: [
+    'golf bay', 'hitting bay', 'driving bay', 'topgolf', 'top golf', 'drive shack',
+    'golf suite', 'simulator bar', 'entertainment golf',
+  ],
+  golf_retail_fitting: [
+    'club fitting', 'custom fitting', 'golf shop', 'pro shop', 'golf retail',
+    'fitting studio', 'club repair',
+  ],
 };
+
+// A closed venue must never be published. Only unambiguous closure
+// phrasing counts — "closed Mondays" is an opening-hours statement.
+const CLOSED_PATTERNS = [
+  'permanently closed', 'temporarily closed', 'closed permanently',
+  'no longer open', 'out of business', 'ceased operations',
+  'course is closed', 'has closed',
+];
+
+export function detectClosedBusiness(text: string): string {
+  const lower = String(text || '').toLowerCase();
+  const hit = CLOSED_PATTERNS.find((p) => lower.includes(p));
+  return hit ? `venue appears closed: ${hit}` : '';
+}
 
 export function detectCategories(text: string): Set<string> {
   const lower = String(text || '').toLowerCase();
@@ -209,6 +267,17 @@ export function normalizeCategory(value: any): string {
     instruction: 'golf_instruction',
     training: 'golf_instruction',
     golf_academy: 'golf_instruction',
+    mini_golf: 'mini_golf',
+    miniature_golf: 'mini_golf',
+    putt_putt: 'mini_golf',
+    putting_course: 'mini_golf',
+    entertainment_golf: 'entertainment_golf',
+    topgolf: 'entertainment_golf',
+    golf_lounge: 'entertainment_golf',
+    golf_retail_fitting: 'golf_retail_fitting',
+    golf_retail: 'golf_retail_fitting',
+    club_fitting: 'golf_retail_fitting',
+    pro_shop: 'golf_retail_fitting',
   };
   return map[raw] || '';
 }
@@ -288,7 +357,10 @@ const LEAD_ITEM_SCHEMA = {
     name: { type: 'string' },
     category: {
       type: 'string',
-      enum: ['course', 'indoor_simulator', 'driving_range', 'golf_instruction', 'other'],
+      enum: [
+        'course', 'indoor_simulator', 'driving_range', 'golf_instruction',
+        'mini_golf', 'entertainment_golf', 'golf_retail_fitting', 'other',
+      ],
     },
     city: { type: 'string' },
     state: { type: 'string' },
@@ -313,11 +385,12 @@ const LEADS_SCHEMA = {
 export function buildOpenAIRequestBody(query: string, model = DEFAULT_OPENAI_MODEL) {
   const instructions = [
     'You are a venue lead researcher for a golf app. Search the web and return REAL permanent golf venues.',
-    'Allowed categories: public/private golf courses, indoor golf simulators, golf driving ranges, and golf instruction/training academies.',
-    'Exclude: disc golf, mini golf, events/tournaments, hotels, restaurants, bars without a primary golf business, medical offices, retail, civic buildings, generic entertainment, and any adult/unsafe business.',
+    'Allowed categories: public/private golf courses, indoor golf simulators and golf lounges, driving ranges and practice facilities, golf instruction academies, mini golf and putting courses, Topgolf-style entertainment golf with driving bays, and golf retail/club-fitting studios.',
+    'Exclude: disc golf, one-off events/tournaments, hotels, restaurants, bars without a primary golf business, medical offices, big-box retail, civic buildings, cemeteries, funeral homes, firearms/shooting ranges, gambling, generic arcades with no golf, and any adult/unsafe business.',
+    'For entertainment golf the business must offer real golf hitting (bays, simulators, TrackMan); a sports bar alone is not eligible. For retail/fitting it must offer club fitting or a golf pro shop.',
     'Every lead MUST include the venue official website. Directory, social, review-site, and map URLs are not official websites.',
     'Never invent a venue, address, phone number, or coordinate. If a field is unknown, return an empty string (or null for coordinates).',
-    'Return at most 8 leads. Only venues physically located in or near the queried city.',
+    'Return at most 10 leads. Only venues physically located in or near the queried city.',
   ].join(' ');
 
   return {

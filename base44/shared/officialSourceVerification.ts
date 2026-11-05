@@ -20,13 +20,14 @@
 
 import { evaluateCorroboration } from './automatedVerification.ts';
 import { checkPublicListing, isTrustedSourceUrl } from './publicListingPolicy.ts';
-import { checkImageUrl, extractImageUrls, isBlockedHost } from './photoValidation.ts';
+import { checkImageUrl, extractImageUrls, isBlockedHost, isLogoOrIconImageUrl } from './photoValidation.ts';
 import {
   CATEGORY_SIGNALS,
   DISCOVERY_CATEGORIES,
   buildDedupKey,
   classifyLeadName,
   detectCategories,
+  detectClosedBusiness,
   domainOf,
   haversineMi,
   hostOf,
@@ -40,15 +41,20 @@ import {
 export const VERIFIER_ID = 'openai_official_source_import';
 export const COORDINATE_SOURCE = 'google_geocoding_official_address';
 export const MAX_COORDINATE_DISAGREEMENT_MI = 2;
-export const MAX_PHOTOS_PER_VENUE = 3;
-export const MAX_PHOTO_CANDIDATES = 10;
+export const MAX_PHOTOS_PER_VENUE = 6;
+export const MAX_PHOTO_CANDIDATES = 18;
 export const MIN_IMAGE_BYTES = 8192;
+// Venue photography is materially larger than an icon or logo asset.
+export const MIN_VENUE_PHOTO_BYTES = 20000;
 
 const CATEGORY_ENTITY_TYPE: Record<string, string> = {
   course: 'course',
   indoor_simulator: 'simulator',
   driving_range: 'golf_related_venue',
   golf_instruction: 'training',
+  mini_golf: 'golf_related_venue',
+  entertainment_golf: 'simulator',
+  golf_retail_fitting: 'golf_related_venue',
 };
 
 export interface LeadEvaluationInput {
@@ -393,6 +399,12 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
   }
   add('category_verified', true);
 
+  // A closed venue must never be published, whatever else passed.
+  const closedSignal = detectClosedBusiness(input.pageText);
+  if (!add('operational', !closedSignal, closedSignal || 'venue appears open')) {
+    return deny('rejected', closedSignal, { corroboration });
+  }
+
   if (!coords) {
     add('coordinates_verified', false, 'coordinates could not be corroborated from an official address');
     return deny('pending', 'coordinates could not be corroborated from an official address', { corroboration });
@@ -486,6 +498,14 @@ export async function verifyOfficialPhoto(
   // unverifiable hop rejects the photo.
   const checked = await checkImageUrl(imageUrl, 'HEAD');
   if (!checked.ok) return reject(checked.reason);
+
+  // Logos, icons, sprites and thumbnails are not venue photography.
+  const logoProblem = isLogoOrIconImageUrl(checked.finalUrl || imageUrl);
+  if (logoProblem) return reject(logoProblem);
+
+  if (checked.contentLength > 0 && checked.contentLength < MIN_VENUE_PHOTO_BYTES) {
+    return reject(`image too small for venue photography (${checked.contentLength} bytes)`);
+  }
 
   const host = hostOf(officialPageUrl);
   return {

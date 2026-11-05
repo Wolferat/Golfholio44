@@ -3,7 +3,11 @@ import { secrets } from 'base44:runtime';
 import {
   SHERMAN_IMPORT_CENTER,
   DEFAULT_OPENAI_MODEL,
+  DISCOVERY_CATEGORIES,
+  FULL_LANE_TILES,
   MAX_LEADS_PER_QUERY,
+  NEGATIVE_TERMS,
+  STANDARD_LANES,
   clampImportRadius,
   clampMaxCalls,
   clampMaxCandidates,
@@ -62,6 +66,15 @@ export default async function (req) {
       }
     }
 
+    const queriesPerLane: Record<string, number> = {};
+    for (const q of plannedQueries) {
+      queriesPerLane[q.category] = (queriesPerLane[q.category] || 0) + 1;
+    }
+
+    const autoSetting = asItems(
+      await base44.asServiceRole.entities.AppSetting.filter({ key: 'auto_publish_enabled' }).catch(() => [])
+    )[0];
+
     // Presence only — key values are never read, logged, or returned.
     const openaiConfigured = !!secrets.get('OPENAI_API_KEY');
     const geocodingConfigured = !!secrets.get('GOOGLE_PLACES_API_KEY');
@@ -85,6 +98,14 @@ export default async function (req) {
       max_candidates: maxCandidates,
       estimated_openai_calls_upper_bound: callsUpperBound,
       estimated_source_fetches_upper_bound: callsUpperBound * MAX_LEADS_PER_QUERY,
+      auto_publish_enabled: autoSetting ? autoSetting.enabled !== false : true,
+      approval_mode: 'autonomous — every gate failure is a rejection, no manual review',
+      lanes: DISCOVERY_CATEGORIES,
+      full_lane_tiles: FULL_LANE_TILES,
+      standard_lanes: STANDARD_LANES,
+      negative_terms: NEGATIVE_TERMS,
+      queries_per_lane: queriesPerLane,
+      lanes_by_tile: plan.lanesByTile,
       planned_query_count: plannedQueries.length,
       planned_queries: plannedQueries,
       tiles_included: plan.tilesIncluded,

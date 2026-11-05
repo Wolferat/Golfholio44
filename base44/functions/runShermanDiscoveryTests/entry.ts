@@ -306,11 +306,11 @@ export default async function (req) {
 
     // ---------------- Query plan + request shape ----------------
     const plan30 = planQueryPlan(30);
-    expect('plans 24 tiled queries at 30 miles', plan30.queries.length === 24, String(plan30.queries.length));
+    expect('plans 30 tiled queries at 30 miles across 7 lanes', plan30.queries.length === 30, String(plan30.queries.length));
     expect('all tiles are inside the default 30-mile boundary', plan30.tilesSkipped.length === 0, JSON.stringify(plan30.tilesSkipped));
 
     const plan10 = planQueryPlan(10);
-    expect('smaller radius excludes far tiles explicitly', plan10.tilesSkipped.length === 2 && plan10.queries.length === 16, JSON.stringify({
+    expect('smaller radius excludes far tiles explicitly', plan10.tilesSkipped.length === 2 && plan10.queries.length === 22, JSON.stringify({
       skipped: plan10.tilesSkipped.map((t) => t.city),
       queries: plan10.queries.length,
     }));

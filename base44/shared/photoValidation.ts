@@ -151,6 +151,27 @@ export function isSafeImageDestination(url: string): { safe: boolean; reason: st
 // official-page fetches. Any unsafe or unverifiable hop rejects the
 // image. Max 5 redirects, 8 s timeout.
 // ------------------------------------------------------------
+// Logos, icons, sprites, avatars and thumbnails are never venue
+// photography. Deterministic URL test — no network call.
+const LOGO_URL_PATTERNS = [
+  'logo', 'favicon', 'sprite', 'icon', 'avatar', 'badge', 'placeholder',
+  'spinner', 'loader', 'thumb', '1x1', 'pixel.gif', 'watermark', 'seal',
+];
+
+export function isLogoOrIconImageUrl(imageUrl: string): string {
+  let path = '';
+  try {
+    const u = new URL(imageUrl);
+    path = `${u.pathname}`.toLowerCase();
+    if (u.pathname.length <= 3) return 'image URL has no real path';
+  } catch {
+    return 'invalid image URL';
+  }
+  const hit = LOGO_URL_PATTERNS.find((p) => path.includes(p));
+  if (hit) return `not venue photography: ${hit} asset`;
+  return '';
+}
+
 export async function checkImageUrl(
   imageUrl: string,
   method: 'HEAD' | 'GET' = 'HEAD'

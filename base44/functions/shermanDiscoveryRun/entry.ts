@@ -290,6 +290,7 @@ export default async function (req) {
         source_fetches: 0,
         accepted: 0,
         pending: 0,
+        blocked: 0,
         rejected: 0,
         duplicate: 0,
         errors: [] as string[],
@@ -331,6 +332,13 @@ export default async function (req) {
       const existingListings = asItems(
         await base44.asServiceRole.entities.Listing.filter({}).catch(() => [])
       );
+
+      // Autonomous-mode kill switch. When auto_publish_enabled is false the
+      // run still verifies every candidate but publishes nothing.
+      const autoSetting = asItems(
+        await base44.asServiceRole.entities.AppSetting.filter({ key: 'auto_publish_enabled' }).catch(() => [])
+      )[0];
+      const autoPublish = autoSetting ? autoSetting.enabled !== false : true;
 
       const leads = ai.leads.slice(0, MAX_LEADS_PER_QUERY);
       let candidatesFound = Number(job.candidates_found) || 0;
@@ -387,6 +395,9 @@ export default async function (req) {
           }
 
           const now = new Date().toISOString();
+          // Fully autonomous: a failed gate is a rejection, not a review
+          // request. Nothing waits on a human.
+          const storedStatus = evaluation.status === 'pending' ? 'rejected' : evaluation.status;
           const candidate = await base44.asServiceRole.entities.DiscoveryCandidate.create({
             job_id: job.id,
             name: typeof lead.name === 'string' ? lead.name : '',
@@ -402,7 +413,7 @@ export default async function (req) {
             source_url: website,
             source_provenance: 'openai_web_search+official_website',
             dedup_key: evaluation.dedupKey,
-            status: evaluation.status,
+            status: storedStatus,
             private_reason: evaluation.reason,
             evidence_json: JSON.stringify({
               checks: evaluation.checks,
@@ -428,7 +439,11 @@ export default async function (req) {
             verified_at: now,
           });
 
-          if (evaluation.status === 'accepted' && evaluation.listing) {
+          if (evaluation.status === 'accepted' && evaluation.listing && !autoPublish) {
+            // Verified and auto-approved, but the kill switch suppresses
+            // every public write for this run.
+            step.blocked++;
+          } else if (evaluation.status === 'accepted' && evaluation.listing) {
             const listing = await base44.asServiceRole.entities.Listing.create(evaluation.listing);
 
             let acceptedPhotos: any[] = [];
@@ -472,7 +487,8 @@ export default async function (req) {
             existingListings.push({ ...evaluation.listing, id: listing.id });
             step.accepted++;
           } else if (evaluation.status === 'pending') {
-            step.pending++;
+            // Reported as rejected in autonomous mode.
+            step.rejected++;
           } else if (evaluation.status === 'duplicate') {
             step.duplicate++;
           } else {
