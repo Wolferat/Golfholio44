@@ -94,6 +94,8 @@ export default async function (req) {
         if (!r?.place_id || found.has(r.place_id)) continue;
         // Keyword searches surface hotels, retail and offices. Keep only
         // businesses whose own listing carries a golf signal.
+        // Keyword searches surface hotels, retail and offices. Keep only
+        // businesses whose own listing carries a golf signal.
         // A golf word in the name is preferred but never required: a
         // bowling alley, sports bar or entertainment center can run a golf
         // simulator under its own name. Those venues are kept and judged on
@@ -104,7 +106,7 @@ export default async function (req) {
         // The API widens a keyword search beyond the radius; keep the
         // queue genuinely local by measuring the result itself.
         if (haversineMi(center.lat, center.lng, loc.lat, loc.lng) > IMPORT_RADIUS_MI) continue;
-        found.set(r.place_id, { category: lane.category });
+        found.set(r.place_id, { category: lane.category, nameSignal });
       }
     }
 
@@ -126,7 +128,12 @@ export default async function (req) {
     const pendingPlaces = Array.from(found.entries()).filter(
       ([placeId]) => !placedIds.has(placeId) && !evaluated.has(placeId)
     );
-    const queue = pendingPlaces.slice(0, limit);
+    // Obvious golf venues are checked first so a scan always makes
+    // progress; venues surfaced only by a keyword lane follow.
+    const ordered = pendingPlaces.sort(
+      (a, b) => Number(b[1].nameSignal) - Number(a[1].nameSignal)
+    );
+    const queue = ordered.slice(0, limit);
 
     const results: any[] = [];
     let awaiting = 0;
@@ -139,10 +146,53 @@ export default async function (req) {
       const det = await placeDetails(key, placeId).catch(() => null);
       if (!det) continue;
 
+      // The business's own profile decides whether it is golf related —
+      // never its name. A bowling alley, sports bar or family entertainment
+      // center with a golf simulator is a real golf venue, and a hotel with
+      // the word "golf" in its name is not.
+      const golf = golfEvidenceFromPlace(det);
       const website = normalizeWebsiteUrl(det.website);
+      // When the profile itself is silent about golf, the venue's own site
+      // still gets one look: entertainment venues rarely mention the golf
+      // simulator they run in their Google listing.
+      if (!golf.isGolf && !usableWebsite(website)) {
+        const reasonText = `no golf signal on the business profile and no official website to check (${golf.reason})`;
+        await base44.asServiceRole.entities.DiscoveryCandidate.create({
+          job_id: JOB_KEY,
+          name: det.name || '',
+          discovery_category: lane.category,
+          city: comp(det.address_components, 'locality') || comp(det.address_components, 'postal_town'),
+          state: comp(det.address_components, 'administrative_area_level_1'),
+          address: det.formatted_address || '',
+          latitude: det.geometry?.location?.lat ?? null,
+          longitude: det.geometry?.location?.lng ?? null,
+          phone: det.formatted_phone_number || '',
+          rating: typeof det.rating === 'number' ? det.rating : null,
+          review_count: typeof det.user_ratings_total === 'number' ? det.user_ratings_total : null,
+          place_id: placeId,
+          official_website: normalizeWebsiteUrl(det.website),
+          source_url: `https://www.google.com/maps/place/?q=place_id:${placeId}`,
+          source_provenance: 'google_places+official_website',
+          status: 'rejected',
+          private_reason: reasonText,
+          evidence_json: JSON.stringify({
+            place_id: placeId,
+            golf_evidence: golf.reason,
+            place_types: det.types || [],
+          }).slice(0, 9000),
+          photos_json: '[]',
+          verified_at: new Date().toISOString(),
+        });
+        rejected++;
+        results.push({ name: det.name || '', status: 'rejected', reason: reasonText });
+        continue;
+      }
+
       const lead = {
         name: det.name || '',
-        category: lane.category,
+        // The lane keyword is a search hint only. The category is decided
+        // from what the venue's own page and profile actually say.
+        category: '',
         city: comp(det.address_components, 'locality') || comp(det.address_components, 'postal_town'),
         state: comp(det.address_components, 'administrative_area_level_1'),
         address: det.formatted_address || '',
@@ -194,6 +244,7 @@ export default async function (req) {
         latitude: coords?.lat ?? place?.lat ?? null,
         longitude: coords?.lng ?? place?.lng ?? null,
         placeTypes: place?.types || det.types || [],
+        placeEvidenceText: golf.text,
         website: officialWebsite,
         rating,
         center,

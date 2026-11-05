@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
-import { nearbySearch, placeDetails, isGolfRelated, isDuplicate, haversineMi } from '../../shared/googlePlaces.ts';
+import { nearbySearch, placeDetails, golfEvidenceFromPlace, isDuplicate, haversineMi } from '../../shared/googlePlaces.ts';
 import { isTrustedSourceUrl } from '../../shared/publicListingPolicy.ts';
 import { corroborateSourceUrl, validatePublicUrl } from '../../shared/automatedVerification.ts';
 import { computeBackoff } from '../../shared/coverageArea.ts';
@@ -83,7 +83,7 @@ async function processCandidate(base44: any, googleKey: string, placeId: string,
     return { accepted: false, placeId, name: null, reason: 'place details fetch failed' };
   }
 
-  const golfCheck = isGolfRelated(det);
+  const golfCheck = golfEvidenceFromPlace(det);
   if (!golfCheck.isGolf) {
     return { accepted: false, placeId, name: det.name, reason: `not golf-related: ${golfCheck.reason}` };
   }
@@ -197,20 +197,21 @@ async function processCoverageRequest(base44: any, coverage: any) {
 
     const courseRes = await nearbySearch(googleKey, lat, lng, radiusM, 'golf_course', null);
     for (const r of courseRes) {
-      const check = isGolfRelated(r);
-      if (check.isGolf && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'course', place: r });
+      if (r?.place_id && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'course', place: r });
     }
 
     const simRes = await nearbySearch(googleKey, lat, lng, radiusM, null, 'golf simulator');
     for (const r of simRes) {
-      const check = isGolfRelated(r);
-      if (check.isGolf && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator', place: r });
+      // A golf word in the name is not required: the venue's own business
+      // profile decides whether it is golf related.
+      if (r?.place_id && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator', place: r });
     }
 
     const rangeRes = await nearbySearch(googleKey, lat, lng, radiusM, null, 'driving range');
     for (const r of rangeRes) {
-      const check = isGolfRelated(r);
-      if (check.isGolf && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator', place: r });
+      // A golf word in the name is not required: the venue's own business
+      // profile decides whether it is golf related.
+      if (r?.place_id && !seen.has(r.place_id)) seen.set(r.place_id, { type: 'simulator', place: r });
     }
 
     candidatesFound = seen.size;

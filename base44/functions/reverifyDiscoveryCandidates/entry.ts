@@ -55,7 +55,6 @@ function isRetryableCandidate(candidate: any): boolean {
 // A rejection that no amount of enrichment can change. Those are skipped so
 // the re-check budget is spent only on undecided venues.
 const DECIDED_PREFIXES = [
-  'non-golf business signal',
   'out of scope',
   'excluded business type',
   'adult/unsafe',
@@ -66,6 +65,21 @@ const DECIDED_PREFIXES = [
 function isDecided(reason: any): boolean {
   const r = String(reason || '');
   return DECIDED_PREFIXES.some((p) => r.startsWith(p));
+}
+
+// Venues rejected only because their NAME read as a non-golf business.
+// That rule is gone — the business profile's own types, summary and
+// reviews now decide — so these deserve one content-based re-check.
+const NAME_RETRY_PREFIXES = [
+  'non-golf business signal',
+  'no golf signal on this business',
+  'name reads as a non-golf business',
+];
+
+function isNameOnlyRejection(candidate: any): boolean {
+  const reason = String(candidate?.private_reason || '');
+  const hasPlace = !!String(candidate?.place_id || '').trim();
+  return hasPlace && NAME_RETRY_PREFIXES.some((p) => reason.startsWith(p));
 }
 
 // Never enriched from both sources yet: the row predates enrichment, or
@@ -125,7 +139,9 @@ export default async function (req) {
     );
 
     // Unenriched rows first: those are the ones whose cards are still thin.
-    const eligible = undecided.filter((c) => isUnenriched(c) || isRetryableCandidate(c));
+    const eligible = undecided.filter(
+      (c) => isUnenriched(c) || isRetryableCandidate(c) || isNameOnlyRejection(c)
+    );
     const ordered = [
       ...eligible.filter(isUnenriched),
       ...eligible.filter((c) => !isUnenriched(c)),
@@ -201,6 +217,7 @@ export default async function (req) {
         latitude: coords?.lat ?? place?.lat ?? null,
         longitude: coords?.lng ?? place?.lng ?? null,
         placeTypes: place?.types || [],
+        placeEvidenceText: place?.evidence_text || '',
         website: officialWebsite,
         rating: place?.rating ?? null,
         center: SHERMAN_IMPORT_CENTER,
