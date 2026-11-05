@@ -22,6 +22,7 @@ import { isGolfRelated } from './googlePlaces.ts';
 import { entityTypeForCategory, findExistingDuplicate } from './officialSourceVerification.ts';
 import {
   classifyLeadName,
+  domainOf,
   haversineMi,
   isUsableStreetAddress,
   normalizeCategory,
@@ -46,6 +47,13 @@ export interface PlacesApprovalInput {
   latitude: number | null;
   longitude: number | null;
   placeTypes?: string[];
+  // The venue's own site when one is known. It is shown to the admin and
+  // published for players, but it is NOT the trust proof on this path —
+  // the record stays Places-anchored.
+  website?: string;
+  rating?: number | null;
+  // Why an admin published this venue instead of the automated gate.
+  notes?: string;
   center: { lat: number; lng: number };
   radiusMi: number;
   existingListings: any[];
@@ -77,6 +85,9 @@ export function evaluatePlacesOnlyApproval(input: PlacesApprovalInput): PlacesAp
   const name = String(input.name || '').trim();
   const placeId = String(input.placeId || '').trim();
   const address = String(input.address || '').trim();
+  const website = String(input.website || '').trim();
+  const rating =
+    typeof input.rating === 'number' && Number.isFinite(input.rating) ? input.rating : null;
   const lat = typeof input.latitude === 'number' && Number.isFinite(input.latitude) ? input.latitude : null;
   const lng = typeof input.longitude === 'number' && Number.isFinite(input.longitude) ? input.longitude : null;
   const radius = Math.min(Math.max(Number(input.radiusMi) || 30, 1), 30);
@@ -122,7 +133,7 @@ export function evaluatePlacesOnlyApproval(input: PlacesApprovalInput): PlacesAp
   }
 
   const duplicate = findExistingDuplicate(
-    { name, address, website: '', city: input.city, coords },
+    { name, address, website, city: input.city, coords },
     input.existingListings
   );
   if (!add('not_duplicate', !duplicate.isDuplicate, `already listed: ${duplicate.reason}`)) {
@@ -142,22 +153,23 @@ export function evaluatePlacesOnlyApproval(input: PlacesApprovalInput): PlacesAp
     latitude: coords!.lat,
     longitude: coords!.lng,
     phone: input.phone || '',
-    website: '',
-    official_website: '',
-    official_domain: '',
+    website,
+    official_website: website,
+    official_domain: website ? domainOf(website) : '',
     discovery_category: category,
     booking_url: '',
     hours: '',
     description: '',
     photos: [],
-    rating: null,
+    rating,
     status: 'approved',
     place_id: placeId,
     source_url: googlePlaceUrl(placeId),
     source_type: 'google_places',
     verification_tier: PLACES_APPROVAL_TIER,
-    verification_notes:
-      'Published by an admin without an official website: venue confirmed from its Google Business Profile (place_id, street address, coordinates). No official-site corroboration was possible.',
+    verification_notes: input.notes
+      ? `Published by an admin after review: ${input.notes}`
+      : 'Published by an admin without an official website: venue confirmed from its Google Business Profile (place_id, street address, coordinates). No official-site corroboration was possible.',
     verified_at: now,
     verified_by: input.adminId,
     golf_verified: true,

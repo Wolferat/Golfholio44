@@ -1,18 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Check,
-  ExternalLink,
-  Loader2,
-  MapPin,
-  RefreshCw,
-  ShieldCheck,
-  ShieldQuestion,
-  X,
-} from 'lucide-react';
+import { Loader2, MapPin, RefreshCw, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { reverifyDiscoveryCandidates, reviewDiscoveryCandidate, findLocalDiscoveryCandidates } from '@/lib/golfData';
+import ApprovalCandidateCard from '@/components/golf/ApprovalCandidateCard';
 
 // Rejection reasons a resolved street address can fix. Everything else
 // is already decided and is never re-run.
@@ -33,6 +24,21 @@ function isRetryable(candidate) {
   return !!candidate.official_website && !hasStreet;
 }
 
+// A rejection enrichment cannot change: never worth a re-check.
+const DECIDED = [
+  'non-golf business signal',
+  'out of scope',
+  'excluded business type',
+  'adult/unsafe',
+  'out of import radius',
+  'venue appears closed',
+];
+
+function isDecided(candidate) {
+  const reason = String(candidate.private_reason || '');
+  return DECIDED.some((p) => reason.startsWith(p));
+}
+
 function errText(e) {
   return (
     e?.response?.data?.error ||
@@ -43,10 +49,22 @@ function errText(e) {
   );
 }
 
+function Section({ title, hint, children }) {
+  return (
+    <div className="space-y-2">
+      <div className="px-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+        {hint && <div className="text-[11px] text-muted-foreground mt-0.5">{hint}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export default function AdminApprovalQueue() {
-  const [items, setItems] = useState([]);
+  const [passed, setPassed] = useState([]);
+  const [needsCall, setNeedsCall] = useState([]);
   const [noSite, setNoSite] = useState([]);
-  const [confirmId, setConfirmId] = useState('');
   const [retryable, setRetryable] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -64,17 +82,24 @@ export default function AdminApprovalQueue() {
         { status: 'rejected' },
         { sort: '-created_date', limit: 200 }
       );
-      setItems(pending?.items || []);
+      const pendingItems = pending?.items || [];
       const rejectedItems = rejected?.items || [];
-      setRetryable(rejectedItems.filter((c) => isRetryable(c) && c.official_website).length);
-      // Real venues with no official website can never pass the automated
-      // gate. They stay hidden until an admin publishes one from its
-      // Google Business Profile.
+
+      // 'verified — …' passed every gate; anything else is the single check
+      // that a human has to settle.
+      setPassed(pendingItems.filter((c) => String(c.private_reason || '').startsWith('verified')));
+      setNeedsCall(pendingItems.filter((c) => !String(c.private_reason || '').startsWith('verified')));
+
+      // Anything never enriched from both sources can be re-checked with the
+      // Google profile facts attached, and may then become approvable.
+      const stale = [...pendingItems, ...rejectedItems].filter(
+        (c) => !String(c.place_id || '').trim() && !isDecided(c)
+      );
+      const addressFixes = rejectedItems.filter((c) => isRetryable(c) && c.official_website);
+      setRetryable(new Set([...stale, ...addressFixes].map((c) => c.id)).size);
       setNoSite(
         rejectedItems
-          .filter((c) =>
-            String(c.private_reason || '').startsWith('no supported official venue website')
-          )
+          .filter((c) => String(c.private_reason || '').startsWith('no supported official venue website'))
           .sort((a, b) => (a.distance_miles ?? 999) - (b.distance_miles ?? 999))
       );
       setError('');
@@ -93,9 +118,10 @@ export default function AdminApprovalQueue() {
     setError('');
     setNote('');
     try {
-      const res = await findLocalDiscoveryCandidates({ limit: 10 });
+      const res = await findLocalDiscoveryCandidates({ limit: 6 });
+      const fresh = (res.awaiting_approval || 0) + (res.needs_your_review || 0);
       setNote(
-        `${res.places_found} golf venues within 30 mi · ${res.awaiting_approval} new awaiting approval · ${res.duplicates} already listed · ${res.rejected} not verifiable`
+        `${res.places_found} golf venues within 30 mi · ${fresh} new for you · ${res.duplicates} already listed · ${res.rejected} not a fit`
       );
       await load();
     } catch (e) {
@@ -111,7 +137,7 @@ export default function AdminApprovalQueue() {
     try {
       const res = await reverifyDiscoveryCandidates({ limit: 10 });
       setNote(
-        `${res.checked} re-checked · ${res.now_awaiting_approval} now awaiting approval · ${res.still_rejected} still rejected (all reasons recorded)`
+        `${res.checked} re-checked · ${res.now_awaiting_approval} ready for you · ${res.still_rejected} not a fit (all reasons recorded)`
       );
       await load();
     } catch (e) {
@@ -128,14 +154,9 @@ export default function AdminApprovalQueue() {
       await reviewDiscoveryCandidate({
         candidate_id: candidate.id,
         action,
-        ...(opts.allowNoWebsite ? { allow_no_website: true } : {}),
+        ...(opts.adminOverride ? { admin_override: true } : {}),
       });
-      setConfirmId('');
-      setNote(
-        action === 'approve'
-          ? `${candidate.name} published`
-          : `${candidate.name} rejected`
-      );
+      setNote(action === 'approve' ? `${candidate.name} published` : `${candidate.name} rejected`);
       await load();
     } catch (e) {
       setError(`${candidate.name}: ${errText(e)}`);
@@ -151,6 +172,8 @@ export default function AdminApprovalQueue() {
     );
   }
 
+  const total = passed.length + needsCall.length;
+
   return (
     <div className="space-y-3">
       <div className="rounded-xl bg-card border border-border p-3">
@@ -158,25 +181,23 @@ export default function AdminApprovalQueue() {
           <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold">
-              {items.length} venue{items.length === 1 ? '' : 's'} awaiting your approval
+              {total} venue{total === 1 ? '' : 's'} waiting on you
             </div>
             <div className="text-[11px] text-muted-foreground">
-              Each one passed every automated gate. Nothing is published until you approve it.
+              Every card carries the website, address, phone and Google rating. Nothing is published until
+              you approve it.
             </div>
           </div>
         </div>
+
         {retryable > 0 && (
           <div className="mt-3 rounded-lg bg-secondary/60 p-2.5">
             <div className="text-[11px] text-muted-foreground">
-              {retryable} venue{retryable === 1 ? '' : 's'} were rejected only because no street address
-              came back. They can be re-checked now that addresses are resolved.
+              {retryable} venue{retryable === 1 ? '' : 's'} were checked before Google details were
+              attached. Re-checking fills in the website, phone and rating, and brings back anything that
+              was turned down on incomplete data.
             </div>
-            <Button
-              variant="secondary"
-              className="h-9 w-full mt-2"
-              disabled={!!busy}
-              onClick={runReverify}
-            >
+            <Button variant="secondary" className="h-9 w-full mt-2" disabled={!!busy} onClick={runReverify}>
               {busy === 'reverify' ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
@@ -199,147 +220,49 @@ export default function AdminApprovalQueue() {
         </div>
       )}
       {note && (
-        <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs text-primary">
-          {note}
-        </div>
+        <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 text-xs text-primary">{note}</div>
       )}
 
-      {items.length === 0 && noSite.length === 0 ? (
+      {total === 0 && noSite.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <ShieldQuestion className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p className="font-medium text-foreground">Nothing to approve</p>
           <p className="text-xs mt-1">
-            {retryable > 0
-              ? 'Re-check the address-only rejections above.'
-              : 'Every verified venue has been decided.'}
+            {retryable > 0 ? 'Re-check the address-only rejections above.' : 'Every verified venue has been decided.'}
           </p>
         </div>
       ) : (
-        items.map((c) => (
-          <div key={c.id} className="rounded-xl bg-card border border-border p-3">
-            <div className="flex items-start gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold truncate">{c.name}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                  {c.discovery_category || 'venue'}
-                  {c.distance_miles != null ? ` · ${c.distance_miles} mi` : ''}
-                </div>
-                <div className="text-[11px] text-muted-foreground mt-1 flex items-start gap-1">
-                  <MapPin className="h-3 w-3 mt-0.5 shrink-0" />
-                  <span className="min-w-0">
-                    {c.address || 'no address'}
-                    {c.city ? ` · ${[c.city, c.state].filter(Boolean).join(', ')}` : ''}
-                  </span>
-                </div>
-                {c.official_website && (
-                  <a
-                    href={c.official_website}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] text-primary mt-1 inline-flex items-center gap-1 truncate max-w-full"
-                  >
-                    <ExternalLink className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{c.official_website.replace(/^https?:\/\//, '')}</span>
-                  </a>
-                )}
-              </div>
-              <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border shrink-0', 'bg-rating/15 text-rating border-rating/30')}>
-                verified
-              </span>
-            </div>
+        <>
+          {needsCall.length > 0 && (
+            <Section
+              title={`Needs your call · ${needsCall.length}`}
+              hint="Real venues anchored to a Google listing. One detail could not be confirmed automatically."
+            >
+              {needsCall.map((c) => (
+                <ApprovalCandidateCard key={c.id} candidate={c} busy={busy} onDecide={decide} />
+              ))}
+            </Section>
+          )}
 
-            <div className="flex gap-2 mt-3">
-              <Button
-                className="flex-1 h-9"
-                disabled={!!busy}
-                onClick={() => decide(c, 'approve')}
-              >
-                {busy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-4 w-4" />}
-                Approve
-              </Button>
-              <Button
-                variant="secondary"
-                className="flex-1 h-9"
-                disabled={!!busy}
-                onClick={() => decide(c, 'reject')}
-              >
-                <X className="h-4 w-4" /> Reject
-              </Button>
-            </div>
-          </div>
-        ))
-      )}
+          {passed.length > 0 && (
+            <Section title={`Ready to publish · ${passed.length}`} hint="Every automated check passed.">
+              {passed.map((c) => (
+                <ApprovalCandidateCard key={c.id} candidate={c} busy={busy} onDecide={decide} />
+              ))}
+            </Section>
+          )}
 
-      {noSite.length > 0 && (
-        <div className="space-y-2">
-          <div className="text-[11px] text-muted-foreground px-1">
-            {noSite.length} venue{noSite.length === 1 ? '' : 's'} have no official website, so they can't be
-            verified automatically. They stay hidden until you publish one from its Google Business Profile.
-          </div>
-          {noSite.map((c) => (
-            <div key={c.id} className="rounded-xl bg-card border border-border p-3">
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{c.name}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                    {c.discovery_category || 'venue'}
-                    {c.distance_miles != null ? ` · ${c.distance_miles} mi` : ''}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-1 flex items-start gap-1">
-                    <MapPin className="h-3 w-3 mt-0.5 shrink-0" />
-                    <span className="min-w-0">
-                      {c.address || 'no address'}
-                      {c.city ? ` · ${[c.city, c.state].filter(Boolean).join(', ')}` : ''}
-                    </span>
-                  </div>
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 bg-secondary text-muted-foreground border-border">
-                  no website
-                </span>
-              </div>
-
-              {confirmId === c.id ? (
-                <div className="flex gap-2 mt-3">
-                  <Button
-                    className="flex-1 h-9"
-                    disabled={!!busy}
-                    onClick={() => decide(c, 'approve', { allowNoWebsite: true })}
-                  >
-                    {busy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Confirm publish
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="flex-1 h-9"
-                    disabled={!!busy}
-                    onClick={() => setConfirmId('')}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex gap-2 mt-3">
-                  <Button
-                    variant="secondary"
-                    className="flex-1 h-9"
-                    disabled={!!busy}
-                    onClick={() => setConfirmId(c.id)}
-                  >
-                    <Check className="h-4 w-4" /> Approve without website
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="flex-1 h-9"
-                    disabled={!!busy}
-                    onClick={() => decide(c, 'reject')}
-                  >
-                    <X className="h-4 w-4" /> Reject
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+          {noSite.length > 0 && (
+            <Section
+              title={`No website found · ${noSite.length}`}
+              hint="Google has no website for these, so they can only be confirmed from the business profile."
+            >
+              {noSite.map((c) => (
+                <ApprovalCandidateCard key={c.id} candidate={c} busy={busy} onDecide={decide} />
+              ))}
+            </Section>
+          )}
+        </>
       )}
     </div>
   );

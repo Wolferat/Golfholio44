@@ -30,6 +30,22 @@
     "distance_miles": {
       "type": "number"
     },
+    "phone": {
+      "type": "string",
+      "description": "Phone from the Google Business Profile, so the admin can call the venue before approving."
+    },
+    "rating": {
+      "type": "number",
+      "description": "Google rating (0-5) for the business profile."
+    },
+    "review_count": {
+      "type": "number",
+      "description": "Number of Google reviews behind the rating."
+    },
+    "place_id": {
+      "type": "string",
+      "description": "Google place_id anchoring this venue's identity."
+    },
     "official_website": {
       "type": "string"
     },

@@ -5,6 +5,7 @@ import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerificat
 import { collectVerifiedPhotos } from '../../shared/officialSourceVerification.ts';
 import { evaluatePlacesOnlyApproval } from '../../shared/placesAnchoredApproval.ts';
 import { findPlaceAddress, placeDetails } from '../../shared/googlePlaces.ts';
+import { usableWebsite } from '../../shared/venueEnrichment.ts';
 
 // ============================================================
 // reviewDiscoveryCandidate — admin-only approval of one verified
@@ -105,6 +106,11 @@ export default async function (req) {
       radiusMi,
       existingListings,
       searchEvidenceUrls: evidence?.search?.evidence_urls || [],
+      // A candidate sourced from a Google listing is anchored by its
+      // place_id, not by a web-search trail, so that check does not apply.
+      ...(String(candidate.source_provenance || '').includes('google_places')
+        ? { requireSearchEvidence: false }
+        : {}),
       jobId: candidate.job_id,
       nowIso: now,
     });
@@ -121,7 +127,11 @@ export default async function (req) {
     let publishChecks: any = ev.checks;
 
     if (!publishRecord) {
-      if (body.allow_no_website !== true) {
+      // Two ways an admin settles what the automated gate could not: a real
+      // venue with no official website, or a real golf venue whose own page
+      // did not confirm every check. Both publish on Google Business
+      // Profile provenance and are recorded as an admin decision.
+      if (body.allow_no_website !== true && body.admin_override !== true) {
         return Response.json(
           {
             error: `not_approvable: ${ev.reason}`,
@@ -129,6 +139,16 @@ export default async function (req) {
             checks: ev.checks,
             can_approve_without_website: !ev.checks?.find((c: any) => c.key === 'official_website_supported')?.pass,
           },
+          { status: 409 }
+        );
+      }
+
+      // A venue the official page proved is closed is never approvable,
+      // whatever the admin asks for.
+      const operational = (ev.checks || []).find((c: any) => c.key === 'operational' && !c.pass);
+      if (operational) {
+        return Response.json(
+          { error: `not_approvable: ${operational.reason}`, status: 'rejected', checks: ev.checks },
           { status: 409 }
         );
       }
@@ -151,6 +171,9 @@ export default async function (req) {
         state: candidate.state,
         address: det?.formatted_address || candidate.address || '',
         phone: det?.formatted_phone_number || '',
+        website: usableWebsite(candidate.official_website) || usableWebsite(det?.website),
+        rating: typeof det?.rating === 'number' ? det.rating : candidate.rating ?? null,
+        notes: ev.reason,
         placeId,
         latitude: det?.geometry?.location?.lat ?? candidate.latitude ?? null,
         longitude: det?.geometry?.location?.lng ?? candidate.longitude ?? null,
@@ -216,6 +239,8 @@ export default async function (req) {
       address: publishRecord.address || verified.lead.address || candidate.address || '',
       city: verified.lead.city || candidate.city || '',
       state: verified.lead.state || candidate.state || '',
+      official_website: publishRecord.official_website || candidate.official_website || '',
+      phone: publishRecord.phone || candidate.phone || '',
       latitude: publishCoords?.lat ?? null,
       longitude: publishCoords?.lng ?? null,
       distance_miles: publishDistance ?? candidate.distance_miles ?? null,

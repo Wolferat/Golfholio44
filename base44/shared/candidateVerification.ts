@@ -19,13 +19,14 @@
 import { fetchSourceDocument } from './automatedVerification.ts';
 import { isTrustedSourceUrl } from './publicListingPolicy.ts';
 import { isBlockedHost } from './photoValidation.ts';
-import { normalizeWebsiteUrl } from './openaiDiscovery.ts';
+import { isUsableStreetAddress, normalizeWebsiteUrl } from './openaiDiscovery.ts';
 import {
   evaluateLead,
   extractOfficialBookingUrl,
   findContactPageUrl,
 } from './officialSourceVerification.ts';
 import { resolveLeadAddress, cleanField } from './leadAddress.ts';
+import { enrichVenue } from './venueEnrichment.ts';
 
 export interface CandidateVerificationInput {
   // { name, category, city, state, address, website, latitude, longitude, phone }
@@ -40,11 +41,37 @@ export interface CandidateVerificationInput {
   canFetchSource?: boolean;
   // Places-sourced leads have a place_id, not a web-search trail.
   requireSearchEvidence?: boolean;
+  // Optional second source: the Google Business Profile for this venue is
+  // always consulted, and a web search may be spent to find a missing
+  // official website.
+  openaiKey?: string;
+  allowWebsiteSearch?: boolean;
   nowIso?: string;
 }
 
 export async function verifyLeadAgainstOfficialSource(input: CandidateVerificationInput) {
-  const website = normalizeWebsiteUrl(input.lead?.website);
+  // Whether the LEAD itself carried a street address, decided before any
+  // enrichment fills one in. Only that pairing can veto a venue through
+  // coordinate disagreement.
+  const leadHadOwnAddress = isUsableStreetAddress(cleanField(input.lead?.address));
+
+  // Two sources, one dossier: the Google Business Profile supplies the
+  // canonical address, phone, rating and place_id, and fills in the
+  // official website when the lead arrived without one.
+  const enrichment = await enrichVenue({
+    placesKey: input.placesKey,
+    openaiKey: input.openaiKey,
+    allowWebsiteSearch: input.allowWebsiteSearch === true,
+    placeId: input.lead?.place_id,
+    name: cleanField(input.lead?.name),
+    city: cleanField(input.lead?.city),
+    state: cleanField(input.lead?.state),
+    address: cleanField(input.lead?.address),
+    website: input.lead?.website,
+  }).catch(() => null);
+
+  const place = enrichment?.place || null;
+  const website = enrichment?.website || normalizeWebsiteUrl(input.lead?.website);
   const canFetch = input.canFetchSource !== false;
   const fetchable = canFetch && website && isTrustedSourceUrl(website) && !isBlockedHost(website);
 
@@ -52,17 +79,27 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
   const doc = fetchable ? await fetchSourceDocument(website) : null;
   if (doc) fetchesUsed++;
 
-  const resolved = await resolveLeadAddress({ placesKey: input.placesKey, lead: input.lead });
-  const lead = {
+  const merged = {
     ...input.lead,
-    address: resolved?.address || cleanField(input.lead?.address),
-    city: cleanField(input.lead?.city) || resolved?.city || '',
-    state: cleanField(input.lead?.state) || resolved?.state || '',
+    address: cleanField(input.lead?.address) || place?.formatted_address || '',
+    city: cleanField(input.lead?.city) || place?.city || '',
+    state: cleanField(input.lead?.state) || place?.state || '',
+    phone: cleanField(input.lead?.phone) || place?.phone || '',
+    place_id: String(input.lead?.place_id || place?.place_id || ''),
+    website,
+  };
+
+  const resolved = await resolveLeadAddress({ placesKey: input.placesKey, lead: merged });
+  const lead = {
+    ...merged,
+    address: resolved?.address || merged.address,
+    city: merged.city || resolved?.city || '',
+    state: merged.state || resolved?.state || '',
   };
 
   // The lead's own coordinates only have to agree when the lead carried
   // its own address. A resolved-by-lookup address has no such pairing.
-  const requireCoordinateAgreement = resolved?.method === 'lead_address';
+  const requireCoordinateAgreement = leadHadOwnAddress;
 
   const run = (pageText: string, html: string) =>
     evaluateLead({
@@ -100,5 +137,5 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
     }
   }
 
-  return { lead, website, doc, resolved, evaluation, fetchesUsed };
+  return { lead, website, doc, resolved, evaluation, fetchesUsed, enrichment };
 }

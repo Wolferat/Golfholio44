@@ -87,7 +87,7 @@ export async function placeDetails(key, placeId) {
   const params = new URLSearchParams({
     place_id: placeId,
     key,
-    fields: 'name,formatted_address,formatted_phone_number,website,rating,photos,geometry,address_components,types',
+    fields: 'name,formatted_address,formatted_phone_number,website,rating,user_ratings_total,photos,geometry,address_components,types',
   });
   const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params}`);
   const data = await res.json();

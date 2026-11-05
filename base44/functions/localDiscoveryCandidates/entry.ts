@@ -3,6 +3,8 @@ import { secrets } from 'base44:runtime';
 import { nearbySearch, placeDetails, isGolfRelated } from '../../shared/googlePlaces.ts';
 import { SHERMAN_IMPORT_CENTER, normalizeWebsiteUrl, haversineMi } from '../../shared/openaiDiscovery.ts';
 import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
+import { evaluatePlacesOnlyApproval } from '../../shared/placesAnchoredApproval.ts';
+import { MAX_WEBSITE_LOOKUPS_PER_SCAN, usableWebsite } from '../../shared/venueEnrichment.ts';
 
 // ============================================================
 // localDiscoveryCandidates — admin-only.
@@ -12,14 +14,17 @@ import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerificat
 // and place_id for every result, so a lead can never arrive without
 // an address, and results are geographically bounded by construction.
 //
-// Places is a LEAD SOURCE ONLY. Every venue still runs the full
-// official-source gate (its own page must corroborate identity, the
-// address, the category, and it must not be closed). Nothing is
-// published: a venue that passes becomes status 'pending' and waits
-// for the admin's approval.
+// Every venue is then enriched from BOTH sources before the gates run:
+// the Google Business Profile supplies the canonical address, phone,
+// rating and review count, and a bounded web search fills in an official
+// website when Google has none. The candidate the admin sees therefore
+// carries every fact needed to decide it in one look.
 //
-// Bounded per call: 7 lane searches + at most `limit` venue
-// evaluations. No OpenAI calls.
+// Nothing is published here. A venue that passes every automated gate
+// becomes status 'pending'. A real, Places-anchored golf venue whose own
+// page could not confirm every check ALSO becomes 'pending', with the
+// exact failing check recorded — that is the admin's decision to make,
+// not a silent rejection.
 // ============================================================
 
 const JOB_KEY = 'local-sherman-v1';
@@ -74,6 +79,7 @@ export default async function (req) {
         { status: 400 }
       );
     }
+    const openaiKey = secrets.get('OPENAI_API_KEY') || '';
 
     const center = SHERMAN_IMPORT_CENTER;
     const radiusM = Math.round(IMPORT_RADIUS_MI * 1609.34);
@@ -120,8 +126,10 @@ export default async function (req) {
 
     const results: any[] = [];
     let awaiting = 0;
+    let needsReview = 0;
     let duplicates = 0;
     let rejected = 0;
+    let websiteLookups = 0;
 
     for (const [placeId, lane] of queue) {
       const det = await placeDetails(key, placeId).catch(() => null);
@@ -138,23 +146,79 @@ export default async function (req) {
         phone: det.formatted_phone_number || '',
         latitude: det.geometry?.location?.lat ?? null,
         longitude: det.geometry?.location?.lng ?? null,
+        place_id: placeId,
       };
 
       const verified = await verifyLeadAgainstOfficialSource({
         lead,
         placesKey: key,
+        openaiKey,
+        // Only venues that arrived with no website from either source spend
+        // a paid search, and only up to the per-scan ceiling.
+        allowWebsiteSearch: !website && websiteLookups < MAX_WEBSITE_LOOKUPS_PER_SCAN,
         center,
         radiusMi: IMPORT_RADIUS_MI,
         existingListings,
         requireSearchEvidence: false,
         jobId: JOB_KEY,
       });
+      if (verified.enrichment?.searched) websiteLookups++;
+
       const ev = verified.evaluation;
+      const place = verified.enrichment?.place || null;
+      const officialWebsite =
+        usableWebsite(verified.website) || usableWebsite(place?.listing_website) || '';
+      const phone = verified.lead.phone || place?.phone || det.formatted_phone_number || '';
+      const rating = place?.rating ?? (typeof det.rating === 'number' ? det.rating : null);
+      const reviewCount =
+        place?.review_count ?? (typeof det.user_ratings_total === 'number' ? det.user_ratings_total : null);
+      const address = verified.lead.address || place?.formatted_address || lead.address || '';
+      const coords = ev.coordinates || { lat: lead.latitude, lng: lead.longitude };
       const now = new Date().toISOString();
 
+      // The one-look dossier this admin decides from: a real golf venue
+      // anchored to a Google place_id, with a street address, contact
+      // details and a website whenever one exists.
+      const placesOnly = evaluatePlacesOnlyApproval({
+        name: lead.name,
+        category: ev.discoveryCategory || lane.category,
+        city: verified.lead.city || lead.city || '',
+        state: verified.lead.state || lead.state || '',
+        address,
+        phone,
+        placeId: place?.place_id || placeId,
+        latitude: coords?.lat ?? null,
+        longitude: coords?.lng ?? null,
+        placeTypes: place?.types || det.types || [],
+        website: officialWebsite,
+        rating,
+        center,
+        radiusMi: IMPORT_RADIUS_MI,
+        existingListings,
+        adminId: user.id,
+        jobId: JOB_KEY,
+        nowIso: now,
+      });
+
       const passed = ev.status === 'accepted';
-      const status = passed ? 'pending' : ev.status === 'duplicate' ? 'duplicate' : 'rejected';
-      if (passed) awaiting++;
+      const isDuplicate =
+        ev.status === 'duplicate' || String(placesOnly.reason || '').startsWith('already listed');
+      const status = isDuplicate ? 'duplicate' : passed || placesOnly.ok ? 'pending' : 'rejected';
+      // When the decisive fact is the venue's own location or an existing
+      // listing, say that — not an earlier check it would have passed.
+      const decidedByPlaces =
+        String(placesOnly.reason || '').startsWith('out of import radius') ||
+        String(placesOnly.reason || '').startsWith('already listed');
+      const reason = passed
+        ? 'verified — awaiting your approval'
+        : status === 'pending'
+          ? `needs your call: ${ev.reason}`
+          : decidedByPlaces
+            ? placesOnly.reason
+            : ev.reason || placesOnly.reason;
+
+      if (status === 'pending' && passed) awaiting++;
+      else if (status === 'pending') needsReview++;
       else if (status === 'duplicate') duplicates++;
       else rejected++;
 
@@ -162,22 +226,38 @@ export default async function (req) {
         job_id: JOB_KEY,
         name: lead.name,
         discovery_category: ev.discoveryCategory || lane.category,
-        city: verified.lead.city || '',
-        state: verified.lead.state || '',
-        address: verified.lead.address || '',
-        latitude: ev.coordinates?.lat ?? lead.latitude,
-        longitude: ev.coordinates?.lng ?? lead.longitude,
-        distance_miles: ev.distanceMiles ?? null,
-        official_website: website,
+        city: verified.lead.city || lead.city || '',
+        state: verified.lead.state || lead.state || '',
+        address,
+        latitude: coords?.lat ?? lead.latitude,
+        longitude: coords?.lng ?? lead.longitude,
+        distance_miles: ev.distanceMiles ?? placesOnly.distanceMiles ?? null,
+        phone,
+        rating,
+        review_count: reviewCount,
+        place_id: place?.place_id || placeId,
+        official_website: officialWebsite,
         booking_url: ev.listing?.booking_url || '',
-        source_url: website,
+        source_url:
+          officialWebsite || `https://www.google.com/maps/place/?q=place_id:${placeId}`,
         source_provenance: 'google_places+official_website',
         dedup_key: ev.dedupKey,
         status,
-        private_reason: passed ? 'verified — awaiting your approval' : ev.reason,
+        private_reason: reason,
         evidence_json: JSON.stringify({
           place_id: placeId,
           checks: ev.checks,
+          website_source: verified.enrichment?.website_source || '',
+          conflicts: verified.enrichment?.conflicts || [],
+          google_profile: place
+            ? {
+                name: place.name,
+                address: place.formatted_address,
+                phone: place.phone,
+                rating: place.rating,
+                reviews: place.review_count,
+              }
+            : null,
           address_resolution: verified.resolved
             ? { method: verified.resolved.method, address: verified.resolved.address }
             : null,
@@ -189,9 +269,11 @@ export default async function (req) {
       results.push({
         name: lead.name,
         status,
-        address: verified.lead.address || '',
-        distance_miles: ev.distanceMiles ?? null,
-        reason: ev.reason,
+        address,
+        website: officialWebsite,
+        phone,
+        distance_miles: ev.distanceMiles ?? placesOnly.distanceMiles ?? null,
+        reason,
       });
     }
 
@@ -199,8 +281,10 @@ export default async function (req) {
       places_found: found.size,
       evaluated: queue.length,
       awaiting_approval: awaiting,
+      needs_your_review: needsReview,
       duplicates,
       rejected,
+      website_lookups_used: websiteLookups,
       remaining: Math.max(0, pendingPlaces.length - queue.length),
       results,
     });
