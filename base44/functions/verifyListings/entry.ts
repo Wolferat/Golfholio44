@@ -1,5 +1,9 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { decideVerification, corroborateSourceUrl } from '../../shared/automatedVerification.ts';
+import { isTrustedSourceUrl } from '../../shared/publicListingPolicy.ts';
+import { placeDetails, isGolfRelated, haversineMi } from '../../shared/googlePlaces.ts';
+import { classifyOfficialVenue } from '../../shared/openaiVenueVerification.ts';
+import { secrets } from 'base44:runtime';
 
 // Automated listing verification.
 //
@@ -33,6 +37,11 @@ export default async function (req) {
 
     const body = await req.json().catch(() => ({}));
     const dryRun = body.dry_run === true;
+    const googleKey = secrets.get('GOOGLE_PLACES_API_KEY');
+    const openaiKey = secrets.get('OPENAI_API_KEY');
+    if (!googleKey || !openaiKey) {
+      return Response.json({ error: 'Both Google Places and OpenAI server secrets are required' }, { status: 503 });
+    }
     const limit = Math.min(Math.max(Number(body.limit) || 25, 1), 50);
 
     const raw = await base44.asServiceRole.entities.Listing.filter({});
@@ -66,56 +75,49 @@ export default async function (req) {
 
     for (const r of candidates) {
       try {
-        // 1. LLM research (with web search) — classifies golf relevance.
-        //    The LLM is NOT the sole authority. It researches and classifies;
-        //    deterministic evidence validation makes the final decision.
-        const evidence = {
-          name: r.name,
-          type: r.type,
-          address: r.address,
-          city: r.city,
-          state: r.state,
-          website: r.website || r.official_website || null,
-          source_url: r.source_url,
-          place_id: r.place_id,
-        };
-        const prompt =
-          'You are a golf-listing research assistant. Research the following business online and classify it.\n' +
-          '1. is_golf: true only if this is a real golf venue (course, simulator, training facility, tournament, league, or clearly golf-related venue). Disc golf is NOT golf. Reject churches, schools, hotels, restaurants, medical, retail, government, adult/unsafe, and entertainment complexes without golf.\n' +
-          '2. recommended_tier: 1-4 confidence (4 highest). Use 0 if not golf.\n' +
-          '3. reason: one short sentence citing the evidence you found.\n' +
-          'Evidence: ' + JSON.stringify(evidence);
-        const llm = await base44.asServiceRole.integrations.Core.InvokeLLM({
-          prompt,
-          model: 'gemini_3_flash',
-          add_context_from_internet: true,
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              is_golf: { type: 'boolean' },
-              recommended_tier: { type: 'number' },
-              reason: { type: 'string' },
-            },
-            required: ['is_golf', 'recommended_tier', 'reason'],
-          },
-        });
-
-        // 2. Determine candidate source URL (deterministic, NOT from LLM).
-        //    Only source_url or official_website may be trusted — never the
-        //    generic website field (typically Google Places).
-        const candidateSourceUrl = r.source_url || r.official_website || '';
-        const recordForDecision = { ...r, source_url: candidateSourceUrl };
-
-        // 3. Corroborate the source URL against the venue identity.
-        //    Fetch the page, check for redirect mismatch, and verify the
-        //    page contains the venue name + at least one stable fact.
-        let sourceCorroboration = null;
-        if (candidateSourceUrl) {
-          sourceCorroboration = await corroborateSourceUrl(candidateSourceUrl, r);
+        // Google identifies the place. OpenAI classifies only text from
+        // the independently fetched and corroborated official website.
+        const candidateSourceUrl = isTrustedSourceUrl(r.official_website)
+          ? r.official_website
+          : (isTrustedSourceUrl(r.source_url) ? r.source_url : '');
+        const sourceCorroboration = candidateSourceUrl
+          ? await corroborateSourceUrl(candidateSourceUrl, r, true)
+          : null;
+        const google = r.place_id
+          ? await placeDetails(googleKey, r.place_id).catch(() => null)
+          : null;
+        const googleGolf = google && isGolfRelated(google).isGolf;
+        let sameOfficialHost = false;
+        try {
+          sameOfficialHost = !!google?.website &&
+            new URL(google.website).hostname.replace(/^www\./, '').toLowerCase() ===
+            new URL(candidateSourceUrl).hostname.replace(/^www\./, '').toLowerCase();
+        } catch {}
+        const googleCoords = google?.geometry?.location;
+        const sameLocation = Number.isFinite(googleCoords?.lat) &&
+          Number.isFinite(googleCoords?.lng) &&
+          Number.isFinite(r.latitude) && Number.isFinite(r.longitude) &&
+          haversineMi(googleCoords.lat, googleCoords.lng, r.latitude, r.longitude) <= 1;
+        const model = sourceCorroboration?.corroborated && googleGolf && sameOfficialHost && sameLocation
+          ? await classifyOfficialVenue(openaiKey, sourceCorroboration.sourceText || '')
+          : null;
+        const supportedType = ['course', 'simulator', 'training', 'golf_related_venue'].includes(r.type);
+        if (!supportedType || !googleGolf || !sameOfficialHost || !sameLocation ||
+            !sourceCorroboration?.corroborated || !model || model.is_golf !== true ||
+            model.category !== r.type) {
+          const reason = 'Google, OpenAI, category, location, and official-source checks must all agree';
+          changes.push({ id: r.id, name: r.name, action: 'pending', reason });
+          pendingSource++;
+          continue;
         }
 
-        // 4. Automated decision: LLM classifies, deterministic evidence validates.
-        const decision = decideVerification(recordForDecision, llm, records, sourceCorroboration);
+        const recordForDecision = { ...r, source_url: candidateSourceUrl };
+        const decision = decideVerification(
+          recordForDecision,
+          { is_golf: true, recommended_tier: 2, reason: model.reason },
+          records,
+          sourceCorroboration
+        );
 
         const now = new Date().toISOString();
         if (decision.action === 'expired') {
