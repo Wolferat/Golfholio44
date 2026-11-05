@@ -3,6 +3,8 @@ import { secrets } from 'base44:runtime';
 import { SHERMAN_IMPORT_CENTER } from '../../shared/openaiDiscovery.ts';
 import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
 import { collectVerifiedPhotos } from '../../shared/officialSourceVerification.ts';
+import { evaluatePlacesOnlyApproval } from '../../shared/placesAnchoredApproval.ts';
+import { findPlaceAddress, placeDetails } from '../../shared/googlePlaces.ts';
 
 // ============================================================
 // reviewDiscoveryCandidate — admin-only approval of one verified
@@ -108,14 +110,73 @@ export default async function (req) {
     });
 
     const ev = verified.evaluation;
-    if (ev.status !== 'accepted' || !ev.listing) {
-      return Response.json(
-        { error: `not_approvable: ${ev.reason}`, status: ev.status, checks: ev.checks },
-        { status: 409 }
-      );
+
+    // A venue with no official website can never pass the official-source
+    // gate. An admin may publish it explicitly from its Google Business
+    // Profile instead. Every safety check that does not need a website
+    // still runs (golf signal, place_id, street address, radius, dedupe).
+    let publishRecord: any = ev.status === 'accepted' ? ev.listing : null;
+    let publishCoords: any = ev.coordinates;
+    let publishDistance: any = ev.distanceMiles;
+    let publishChecks: any = ev.checks;
+
+    if (!publishRecord) {
+      if (body.allow_no_website !== true) {
+        return Response.json(
+          {
+            error: `not_approvable: ${ev.reason}`,
+            status: ev.status,
+            checks: ev.checks,
+            can_approve_without_website: !ev.checks?.find((c: any) => c.key === 'official_website_supported')?.pass,
+          },
+          { status: 409 }
+        );
+      }
+
+      let placeId = String(evidence?.place_id || '').trim();
+      let det: any = null;
+      if (placesKey && placeId) det = await placeDetails(placesKey, placeId).catch(() => null);
+      if (!placeId && placesKey) {
+        const found = await findPlaceAddress(placesKey, candidate.name, candidate.city, candidate.state).catch(
+          () => null
+        );
+        placeId = found?.place_id || '';
+        if (placeId) det = await placeDetails(placesKey, placeId).catch(() => null);
+      }
+
+      const placesOnly = evaluatePlacesOnlyApproval({
+        name: candidate.name,
+        category: candidate.discovery_category,
+        city: candidate.city,
+        state: candidate.state,
+        address: det?.formatted_address || candidate.address || '',
+        phone: det?.formatted_phone_number || '',
+        placeId,
+        latitude: det?.geometry?.location?.lat ?? candidate.latitude ?? null,
+        longitude: det?.geometry?.location?.lng ?? candidate.longitude ?? null,
+        placeTypes: det?.types || [],
+        center: SHERMAN_IMPORT_CENTER,
+        radiusMi,
+        existingListings,
+        adminId: user.id,
+        jobId: candidate.job_id,
+        nowIso: now,
+      });
+
+      if (!placesOnly.ok) {
+        return Response.json(
+          { error: `not_approvable: ${placesOnly.reason}`, status: 'rejected', checks: placesOnly.checks },
+          { status: 409 }
+        );
+      }
+
+      publishRecord = placesOnly.listing;
+      publishCoords = placesOnly.coordinates;
+      publishDistance = placesOnly.distanceMiles;
+      publishChecks = placesOnly.checks;
     }
 
-    const listing = await base44.asServiceRole.entities.Listing.create(ev.listing);
+    const listing = await base44.asServiceRole.entities.Listing.create(publishRecord);
 
     let acceptedPhotos: any[] = [];
     if (verified.doc?.ok) {
@@ -123,7 +184,7 @@ export default async function (req) {
       acceptedPhotos = photoResult.accepted;
     }
 
-    if (acceptedPhotos.length > 0) {
+    if (acceptedPhotos.length > 0 && publishRecord.official_website) {
       await base44.asServiceRole.entities.OfficialPhoto.bulkCreate(
         acceptedPhotos.map((p, i) => ({
           listing_id: listing.id,
@@ -145,23 +206,24 @@ export default async function (req) {
         photos: acceptedPhotos.map((p) => p.photo_url),
         photo_verified: true,
         photo_source: 'official_website',
-        photo_source_url: ev.listing.official_website,
+        photo_source_url: publishRecord.official_website,
       });
     }
 
     const updatedCandidate = await base44.asServiceRole.entities.DiscoveryCandidate.update(candidateId, {
       status: 'accepted',
       listing_id: listing.id,
-      address: verified.lead.address || candidate.address || '',
+      address: publishRecord.address || verified.lead.address || candidate.address || '',
       city: verified.lead.city || candidate.city || '',
       state: verified.lead.state || candidate.state || '',
-      latitude: ev.coordinates?.lat ?? null,
-      longitude: ev.coordinates?.lng ?? null,
-      distance_miles: ev.distanceMiles ?? candidate.distance_miles ?? null,
+      latitude: publishCoords?.lat ?? null,
+      longitude: publishCoords?.lng ?? null,
+      distance_miles: publishDistance ?? candidate.distance_miles ?? null,
       private_reason: 'approved by admin',
       photos_json: JSON.stringify(acceptedPhotos.map((p) => p.photo_url)),
       evidence_json: JSON.stringify({
-        checks: ev.checks,
+        checks: publishChecks,
+        approved_without_website: !publishRecord.official_website || false,
         search: evidence?.search || null,
         address_resolution: verified.resolved
           ? { method: verified.resolved.method, address: verified.resolved.address }

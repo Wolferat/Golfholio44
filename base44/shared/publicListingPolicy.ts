@@ -83,6 +83,35 @@ function isTrustedSourceUrl(u) {
   }
 }
 
+// ============================================================
+// Places-anchored provenance — a real venue with NO official website.
+//
+// Its durable identity is its Google Business Profile place_id, and an
+// admin published it deliberately. This is a SEPARATE, narrower
+// provenance than an official site, so it qualifies only when every
+// marker is present: source_type google_places, a real place_id, the
+// exact place-id URL form, tier 1, and an admin verifier plus the
+// approval timestamp. A bare Google Maps link, a directory page, or a
+// record without those markers never qualifies.
+// ============================================================
+const PLACE_ID_URL_RE = /^https:\/\/www\.google\.com\/maps\/place\/\?q=place_id:[A-Za-z0-9_-]+$/;
+
+function isGooglePlaceUrl(u) {
+  return typeof u === 'string' && PLACE_ID_URL_RE.test(u.trim());
+}
+
+export function isPlacesAnchoredRecord(record) {
+  if (!record) return false;
+  return (
+    record.source_type === 'google_places' &&
+    !!String(record.place_id || '').trim() &&
+    isGooglePlaceUrl(record.source_url) &&
+    !!record.verified_by &&
+    !!record.verified_at &&
+    record.verification_tier === 1
+  );
+}
+
 function isNumber(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -195,7 +224,7 @@ export function checkPublicListing(record, playerLat, playerLng, radiusMi) {
   //     populated — must remain hidden.
   const hasVerifier = !!(record.verified_by || record.golf_verified_by);
   const hasTimestamp = !!(record.verified_at || record.golf_verified_at);
-  const hasValidSource = isTrustedSourceUrl(record.source_url);
+  const hasValidSource = isTrustedSourceUrl(record.source_url) || isPlacesAnchoredRecord(record);
   add('verification_provenance', hasVerifier && hasTimestamp && hasValidSource, 'incomplete verification provenance: requires verifier + timestamp + valid source_url');
   // 6. verification_tier is exactly 1, 2, 3, or 4
   const tier = record.verification_tier;
@@ -205,7 +234,11 @@ export function checkPublicListing(record, playerLat, playerLng, radiusMi) {
     `verification_tier=${tier}`
   );
   // 7. source_url is a valid https/http URL
-  add('source_url_valid', isTrustedSourceUrl(record.source_url), 'source_url missing, not http/https, or untrusted (Google Maps/directory/social)');
+  add(
+    'source_url_valid',
+    isTrustedSourceUrl(record.source_url) || isPlacesAnchoredRecord(record),
+    'source_url missing, not http/https, or untrusted (Google Maps/directory/social)'
+  );
   // 8. type is one of the allowed values
   add('type_allowed', ALLOWED_TYPES.has(record.type), `type=${record.type}`);
   // 9. valid numeric latitude and longitude

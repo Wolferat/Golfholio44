@@ -45,6 +45,8 @@ function errText(e) {
 
 export default function AdminApprovalQueue() {
   const [items, setItems] = useState([]);
+  const [noSite, setNoSite] = useState([]);
+  const [confirmId, setConfirmId] = useState('');
   const [retryable, setRetryable] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -63,7 +65,18 @@ export default function AdminApprovalQueue() {
         { sort: '-created_date', limit: 200 }
       );
       setItems(pending?.items || []);
-      setRetryable((rejected?.items || []).filter((c) => isRetryable(c) && c.official_website).length);
+      const rejectedItems = rejected?.items || [];
+      setRetryable(rejectedItems.filter((c) => isRetryable(c) && c.official_website).length);
+      // Real venues with no official website can never pass the automated
+      // gate. They stay hidden until an admin publishes one from its
+      // Google Business Profile.
+      setNoSite(
+        rejectedItems
+          .filter((c) =>
+            String(c.private_reason || '').startsWith('no supported official venue website')
+          )
+          .sort((a, b) => (a.distance_miles ?? 999) - (b.distance_miles ?? 999))
+      );
       setError('');
     } catch (e) {
       setError(errText(e));
@@ -107,12 +120,17 @@ export default function AdminApprovalQueue() {
     setBusy('');
   };
 
-  const decide = async (candidate, action) => {
+  const decide = async (candidate, action, opts = {}) => {
     setBusy(candidate.id);
     setError('');
     setNote('');
     try {
-      await reviewDiscoveryCandidate({ candidate_id: candidate.id, action });
+      await reviewDiscoveryCandidate({
+        candidate_id: candidate.id,
+        action,
+        ...(opts.allowNoWebsite ? { allow_no_website: true } : {}),
+      });
+      setConfirmId('');
       setNote(
         action === 'approve'
           ? `${candidate.name} published`
@@ -186,7 +204,7 @@ export default function AdminApprovalQueue() {
         </div>
       )}
 
-      {items.length === 0 ? (
+      {items.length === 0 && noSite.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <ShieldQuestion className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p className="font-medium text-foreground">Nothing to approve</p>
@@ -250,6 +268,78 @@ export default function AdminApprovalQueue() {
             </div>
           </div>
         ))
+      )}
+
+      {noSite.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] text-muted-foreground px-1">
+            {noSite.length} venue{noSite.length === 1 ? '' : 's'} have no official website, so they can't be
+            verified automatically. They stay hidden until you publish one from its Google Business Profile.
+          </div>
+          {noSite.map((c) => (
+            <div key={c.id} className="rounded-xl bg-card border border-border p-3">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{c.name}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                    {c.discovery_category || 'venue'}
+                    {c.distance_miles != null ? ` · ${c.distance_miles} mi` : ''}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1 flex items-start gap-1">
+                    <MapPin className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span className="min-w-0">
+                      {c.address || 'no address'}
+                      {c.city ? ` · ${[c.city, c.state].filter(Boolean).join(', ')}` : ''}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 bg-secondary text-muted-foreground border-border">
+                  no website
+                </span>
+              </div>
+
+              {confirmId === c.id ? (
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    className="flex-1 h-9"
+                    disabled={!!busy}
+                    onClick={() => decide(c, 'approve', { allowNoWebsite: true })}
+                  >
+                    {busy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Confirm publish
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="flex-1 h-9"
+                    disabled={!!busy}
+                    onClick={() => setConfirmId('')}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    variant="secondary"
+                    className="flex-1 h-9"
+                    disabled={!!busy}
+                    onClick={() => setConfirmId(c.id)}
+                  >
+                    <Check className="h-4 w-4" /> Approve without website
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1 h-9"
+                    disabled={!!busy}
+                    onClick={() => decide(c, 'reject')}
+                  >
+                    <X className="h-4 w-4" /> Reject
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
