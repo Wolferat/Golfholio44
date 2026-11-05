@@ -14,7 +14,7 @@ import { isTrustedSourceUrl } from './publicListingPolicy.ts';
 import { isBlockedHost } from './photoValidation.ts';
 import { normalizeWebsiteUrl } from './openaiDiscovery.ts';
 import { evaluateLead, extractOfficialBookingUrl } from './officialSourceVerification.ts';
-import { resolveLeadAddress } from './leadAddress.ts';
+import { resolveLeadAddress, cleanField } from './leadAddress.ts';
 
 export interface CandidateVerificationInput {
   // { name, category, city, state, address, website, latitude, longitude, phone }
@@ -41,9 +41,9 @@ export async function verifyLeadAgainstOfficialSource(input: CandidateVerificati
   const resolved = await resolveLeadAddress({ placesKey: input.placesKey, lead: input.lead });
   const lead = {
     ...input.lead,
-    address: resolved?.address || String(input.lead?.address || '').trim(),
-    city: input.lead?.city || resolved?.city || '',
-    state: input.lead?.state || resolved?.state || '',
+    address: resolved?.address || cleanField(input.lead?.address),
+    city: cleanField(input.lead?.city) || resolved?.city || '',
+    state: cleanField(input.lead?.state) || resolved?.state || '',
   };
 
   const evaluation = evaluateLead({

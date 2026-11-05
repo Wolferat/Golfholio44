@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.54';
 import { secrets } from 'base44:runtime';
-import { SHERMAN_IMPORT_CENTER } from '../../shared/openaiDiscovery.ts';
+import { SHERMAN_IMPORT_CENTER, isUsableStreetAddress } from '../../shared/openaiDiscovery.ts';
 import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
 
 // ============================================================
@@ -33,6 +33,17 @@ const RETRYABLE_PREFIXES = [
 function isRetryable(reason: any): boolean {
   const r = String(reason || '');
   return RETRYABLE_PREFIXES.some((p) => r.startsWith(p));
+}
+
+// A candidate is only retryable while it still has NO street address.
+// Once an address is resolved the resulting verdict is final — even
+// when that verdict is a rejection — so nothing loops forever.
+function isRetryableCandidate(candidate: any): boolean {
+  return (
+    !!candidate?.official_website &&
+    !isUsableStreetAddress(candidate?.address) &&
+    isRetryable(candidate?.private_reason)
+  );
 }
 
 function asItems(res: any): any[] {
@@ -84,7 +95,7 @@ export default async function (req) {
         .catch(() => [])
     );
 
-    const retryable = rejected.filter((c) => isRetryable(c.private_reason) && c.official_website);
+    const retryable = rejected.filter(isRetryableCandidate);
     const queue = retryable.slice(0, limit);
 
     const existingListings = asItems(

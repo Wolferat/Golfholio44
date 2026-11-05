@@ -123,6 +123,17 @@ export async function stopShermanDiscovery(job_id) {
   return res.data;
 }
 
+// Discovery approval — admin only. Re-verification costs address lookups only.
+export async function reverifyDiscoveryCandidates(params = {}) {
+  const res = await base44.functions.invoke('reverifyDiscoveryCandidates', params);
+  return res.data;
+}
+
+export async function reviewDiscoveryCandidate(params) {
+  const res = await base44.functions.invoke('reviewDiscoveryCandidate', params);
+  return res.data;
+}
+
 export async function getShermanDiscoveryStatus(job_id) {
   const res = await base44.functions.invoke('shermanDiscoveryRun', { action: 'status', job_id });
   return res.data;

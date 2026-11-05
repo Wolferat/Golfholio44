@@ -1,19 +1,20 @@
 // ============================================================
 // Lead address resolution.
 //
-// Leads arrive from a model web search and frequently carry no
-// street address (or only a city). Without a street address the
-// verification gate cannot confirm a location on the official page,
-// so the venue is rejected even when it is real.
+// Leads arrive from a model web search and frequently carry no street
+// address (or only a city, or a placeholder such as "Not specified").
+// Without a street address the verification gate cannot confirm a
+// location on the official page, so the venue is rejected even when it
+// is real.
 //
 // This resolves ONE canonical street address per lead:
 //   1. If the lead already has a usable street address, geocode it.
-//   2. Otherwise look the venue up by name + city + state and take
-//      the formatted address Google returns.
+//   2. Otherwise look the venue up by name + city + state and take the
+//      formatted address Google returns, then geocode that.
 //
 // It never invents an address: if neither path produces a street
 // address with a number, resolution returns null and the venue is
-// rejected. Google Places is used ONLY to source/geocode an address
+// rejected. Google Places/Geocoding is used ONLY to source an address
 // — it is never evidence of anything, and the official page must
 // still independently confirm the address before approval.
 // ============================================================
@@ -26,7 +27,7 @@ export interface ResolvedLeadAddress {
   city: string;
   state: string;
   // How the address was obtained — recorded in the evidence for audit.
-  method: 'lead_address' | 'places_find_place';
+  method: 'lead_address' | 'places_text_search';
   geocoded: {
     lat: number;
     lng: number;
@@ -38,53 +39,68 @@ export interface ResolvedLeadAddress {
   } | null;
 }
 
+// Models fill unknowns with placeholders. Treat them as empty so they
+// never reach a lookup query or the published record.
+const PLACEHOLDERS = /^(not specified|not available|not provided|unknown|n\/a|na|none|null|tbd|-+|—)$/i;
+
+export function cleanField(value: any): string {
+  const raw = String(value ?? '').trim();
+  if (!raw || PLACEHOLDERS.test(raw)) return '';
+  return raw;
+}
+
+function geocodedFrom(g: any) {
+  if (!g) return null;
+  return {
+    lat: g.lat,
+    lng: g.lng,
+    postal_code: g.postal_code || '',
+    street_line: g.street_line || '',
+    formatted_address: g.formatted_address || '',
+    locality: g.locality || '',
+    admin_area: g.admin_area || '',
+  };
+}
+
 export async function resolveLeadAddress(input: {
   placesKey?: string;
   lead: any;
 }): Promise<ResolvedLeadAddress | null> {
   const lead = input.lead || {};
   const key = String(input.placesKey || '').trim();
-  const given = String(lead.address || '').trim();
+  const given = cleanField(lead.address);
+  const city = cleanField(lead.city);
+  const state = cleanField(lead.state);
 
   if (isUsableStreetAddress(given)) {
     const g = key ? await geocode(key, given).catch(() => null) : null;
     return {
       address: g?.formatted_address || given,
-      city: lead.city || g?.locality || '',
-      state: lead.state || g?.admin_area || '',
+      city: city || cleanField(g?.locality),
+      state: state || cleanField(g?.admin_area),
       method: 'lead_address',
-      geocoded: g
-        ? {
-            lat: g.lat,
-            lng: g.lng,
-            postal_code: g.postal_code || '',
-            street_line: g.street_line || '',
-            formatted_address: g.formatted_address || '',
-            locality: g.locality || '',
-            admin_area: g.admin_area || '',
-          }
-        : null,
+      geocoded: geocodedFrom(g),
     };
   }
 
   if (!key) return null;
 
-  const found = await findPlaceAddress(key, lead.name, lead.city, lead.state).catch(() => null);
+  const found = await findPlaceAddress(key, cleanField(lead.name), city, state).catch(() => null);
   if (!found || !isUsableStreetAddress(found.formatted_address)) return null;
 
+  // Geocode the resolved address for its canonical postal code and
+  // street line — the facts the official page must confirm.
+  const g = await geocode(key, found.formatted_address).catch(() => null);
+
   return {
-    address: found.formatted_address,
-    city: lead.city || found.city || '',
-    state: lead.state || found.state || '',
-    method: 'places_find_place',
-    geocoded: {
-      lat: found.lat,
-      lng: found.lng,
-      postal_code: found.postal_code || '',
-      street_line: found.street_line || '',
-      formatted_address: found.formatted_address || '',
-      locality: found.city || '',
-      admin_area: found.state || '',
-    },
+    address: g?.formatted_address || found.formatted_address,
+    city: city || cleanField(g?.locality),
+    state: state || cleanField(g?.admin_area),
+    method: 'places_text_search',
+    geocoded:
+      geocodedFrom(g) ||
+      (typeof found.lat === 'number' && typeof found.lng === 'number'
+        ? { lat: found.lat, lng: found.lng, formatted_address: found.formatted_address, postal_code: '', street_line: '' }
+        : null),
   };
 }

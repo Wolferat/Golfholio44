@@ -7,10 +7,13 @@ import { useAuth } from '@/lib/AuthContext';
 import AuditTable from '@/components/golf/AuditTable';
 import AdminReviews from '@/components/golf/AdminReviews';
 import AdminShermanImport from '@/components/golf/AdminShermanImport';
+import AdminApprovalQueue from '@/components/golf/AdminApprovalQueue';
+import { base44 } from '@/api/base44Client';
 
 export default function Admin() {
   const { user } = useAuth();
   const [tab, setTab] = useState('pending');
+  const [approvalCount, setApprovalCount] = useState(0);
   const [photos, setPhotos] = useState([]);
   const [flagged, setFlagged] = useState([]);
   const [pending, setPending] = useState([]);
@@ -48,6 +51,12 @@ export default function Admin() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    base44.entities.DiscoveryCandidate.count({ status: 'pending' })
+      .then((n) => setApprovalCount(Number(n) || 0))
+      .catch(() => {});
+  }, [tab]);
+
   const handleReview = async (id, action) => { await reviewPhoto(id, action); await load(); };
 
   const handleListingReview = async (id, action) => {
@@ -73,6 +82,7 @@ export default function Admin() {
 
   const tabs = [
     { key: 'pending', label: 'Pending', count: pending.length },
+    { key: 'approvals', label: 'Approvals', count: approvalCount },
     { key: 'reviews', label: 'Reviews', count: reviewQueue.length },
     { key: 'audit', label: 'Audit', count: null },
     { key: 'auditTable', label: 'Audit Table', count: null },
@@ -168,6 +178,8 @@ export default function Admin() {
             ))}
           </div>
         )
+      ) : tab === 'approvals' ? (
+        <AdminApprovalQueue />
       ) : tab === 'reviews' ? (
         <AdminReviews reviews={reviewQueue} onAction={handleReviewAction} />
       ) : tab === 'metrics' ? (
