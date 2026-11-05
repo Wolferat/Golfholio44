@@ -1,10 +1,11 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.54';
 import { secrets } from 'base44:runtime';
-import { nearbySearch, placeDetails, isGolfRelated, golfEvidenceFromPlace } from '../../shared/googlePlaces.ts';
-import { SHERMAN_IMPORT_CENTER, normalizeWebsiteUrl, haversineMi } from '../../shared/openaiDiscovery.ts';
+import { nearbySearch, placeDetails, findPlaceAddress, isGolfRelated, golfEvidenceFromPlace } from '../../shared/googlePlaces.ts';
+import { SHERMAN_IMPORT_CENTER, normalizeWebsiteUrl, normalizeName, haversineMi } from '../../shared/openaiDiscovery.ts';
 import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
 import { evaluatePlacesOnlyApproval } from '../../shared/placesAnchoredApproval.ts';
 import { MAX_WEBSITE_LOOKUPS_PER_SCAN, usableWebsite } from '../../shared/venueEnrichment.ts';
+import { discoverVenuesByWebSearch } from '../../shared/golfWebSearch.ts';
 
 // ============================================================
 // localDiscoveryCandidates — admin-only.
@@ -30,6 +31,8 @@ import { MAX_WEBSITE_LOOKUPS_PER_SCAN, usableWebsite } from '../../shared/venueE
 const JOB_KEY = 'local-sherman-v1';
 const IMPORT_RADIUS_MI = 30;
 const MAX_EVALUATIONS = 10;
+// How many venues the one web-search pass may name per scan.
+const MAX_SEARCH_LEADS = 6;
 
 const LANES = [
   { category: 'course', type: 'golf_course', keyword: null },
@@ -85,7 +88,7 @@ export default async function (req) {
     const radiusM = Math.round(IMPORT_RADIUS_MI * 1609.34);
 
     // 1. Source every lane around the center.
-    const found = new Map<string, { category: string; nameSignal: boolean }>();
+    const found = new Map<string, { category: string; nameSignal: boolean; searched: boolean; name: string }>();
     for (const lane of LANES) {
       const results = await nearbySearch(key, center.lat, center.lng, radiusM, lane.type, lane.keyword).catch(
         () => []
@@ -106,7 +109,46 @@ export default async function (req) {
         // The API widens a keyword search beyond the radius; keep the
         // queue genuinely local by measuring the result itself.
         if (haversineMi(center.lat, center.lng, loc.lat, loc.lng) > IMPORT_RADIUS_MI) continue;
-        found.set(r.place_id, { category: lane.category, nameSignal });
+        found.set(r.place_id, { category: lane.category, nameSignal, searched: false, name: r.name || '' });
+      }
+    }
+
+    // 1b. One web-search pass. Google's keyword search cannot see golf that
+    // runs inside a business named for something else — the bowling alley
+    // with a simulator, the sports bar with three bays — because their
+    // Google listing says "restaurant". The web names those venues and
+    // Google Places then anchors each one's identity. Bounded to a handful
+    // of leads per scan.
+    let searchLeads = 0;
+    if (openaiKey) {
+      const [centerCity, centerState] = SHERMAN_IMPORT_CENTER.label.split(',').map((s) => s.trim());
+      const knownNames = new Set(
+        Array.from(found.values())
+          .map((v) => normalizeName(v.name))
+          .filter(Boolean)
+      );
+      const named = await discoverVenuesByWebSearch(openaiKey, {
+        city: centerCity,
+        state: centerState,
+        radiusMi: IMPORT_RADIUS_MI,
+        limit: MAX_SEARCH_LEADS,
+      }).catch(() => []);
+
+      for (const item of named) {
+        const dedup = normalizeName(item.name);
+        if (!dedup || knownNames.has(dedup)) continue;
+        const hit = await findPlaceAddress(key, item.name, item.city, item.state).catch(() => null);
+        if (!hit?.place_id) continue;
+        knownNames.add(dedup);
+        searchLeads++;
+        if (!found.has(hit.place_id)) {
+          found.set(hit.place_id, {
+            category: 'entertainment_golf',
+            nameSignal: false,
+            searched: true,
+            name: hit.name || item.name,
+          });
+        }
       }
     }
 
@@ -131,7 +173,9 @@ export default async function (req) {
     // Obvious golf venues are checked first so a scan always makes
     // progress; venues surfaced only by a keyword lane follow.
     const ordered = pendingPlaces.sort(
-      (a, b) => Number(b[1].nameSignal) - Number(a[1].nameSignal)
+      (a, b) =>
+        Number(b[1].searched) - Number(a[1].searched) ||
+        Number(b[1].nameSignal) - Number(a[1].nameSignal)
     );
     const queue = ordered.slice(0, limit);
 

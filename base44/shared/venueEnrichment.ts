@@ -194,7 +194,7 @@ const WEBSITE_SCHEMA = {
   required: ['website'],
 };
 
-function outputText(data: any): string {
+export function outputText(data: any): string {
   let text = '';
   const output = Array.isArray(data?.output) ? data.output : [];
   for (const item of output) {
