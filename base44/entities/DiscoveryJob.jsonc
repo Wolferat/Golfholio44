@@ -1,0 +1,157 @@
+{
+  "name": "DiscoveryJob",
+  "type": "object",
+  "properties": {
+    "job_key": {
+      "type": "string",
+      "description": "Stable identifier for this one-time import (e.g. sherman-tx-evergreen-v1)."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "running",
+        "stopped",
+        "completed",
+        "completed_with_ceiling",
+        "failed"
+      ],
+      "default": "draft",
+      "description": "draft = created but not confirmed, running = stepping through queries, stopped = admin stop control used, completed = all planned queries processed, completed_with_ceiling = hit a per-run ceiling with queries unrun, failed = fail-closed stop."
+    },
+    "center_label": {
+      "type": "string"
+    },
+    "center_latitude": {
+      "type": "number"
+    },
+    "center_longitude": {
+      "type": "number"
+    },
+    "radius_miles": {
+      "type": "number",
+      "default": 30,
+      "description": "Admin-chosen IMPORT radius (default 30). This is NOT the player visibility radius."
+    },
+    "openai_model": {
+      "type": "string"
+    },
+    "max_openai_calls": {
+      "type": "number",
+      "default": 24,
+      "description": "Hard per-run ceiling on OpenAI Responses API calls."
+    },
+    "max_candidates": {
+      "type": "number",
+      "default": 120,
+      "description": "Hard per-run ceiling on candidate evaluations."
+    },
+    "planned_queries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Encoded planned queries as 'categoryKey||query text'."
+    },
+    "query_index": {
+      "type": "number",
+      "default": 0,
+      "description": "Checkpoint: index of the next planned query to run."
+    },
+    "openai_calls_used": {
+      "type": "number",
+      "default": 0
+    },
+    "openai_input_tokens": {
+      "type": "number",
+      "default": 0
+    },
+    "openai_output_tokens": {
+      "type": "number",
+      "default": 0
+    },
+    "source_fetches_used": {
+      "type": "number",
+      "default": 0
+    },
+    "candidates_found": {
+      "type": "number",
+      "default": 0
+    },
+    "accepted_count": {
+      "type": "number",
+      "default": 0
+    },
+    "pending_count": {
+      "type": "number",
+      "default": 0
+    },
+    "rejected_count": {
+      "type": "number",
+      "default": 0
+    },
+    "duplicate_count": {
+      "type": "number",
+      "default": 0
+    },
+    "truncated_leads": {
+      "type": "number",
+      "default": 0,
+      "description": "Leads dropped because a single query returned more than the per-query cap. Never silent."
+    },
+    "stop_requested": {
+      "type": "boolean",
+      "default": false
+    },
+    "confirmed_by": {
+      "type": "string",
+      "description": "Admin user id that explicitly confirmed execution."
+    },
+    "confirmed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "last_error": {
+      "type": "string"
+    },
+    "summary_json": {
+      "type": "string",
+      "description": "Serialized run summary including unrun queries and actual API usage."
+    }
+  },
+  "required": [
+    "job_key",
+    "center_latitude",
+    "center_longitude"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

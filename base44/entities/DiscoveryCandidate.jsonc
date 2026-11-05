@@ -1,0 +1,105 @@
+{
+  "name": "DiscoveryCandidate",
+  "type": "object",
+  "properties": {
+    "job_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "discovery_category": {
+      "type": "string",
+      "description": "Exact category determined from the official source: course | indoor_simulator | driving_range | golf_instruction."
+    },
+    "city": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "latitude": {
+      "type": "number"
+    },
+    "longitude": {
+      "type": "number"
+    },
+    "distance_miles": {
+      "type": "number"
+    },
+    "official_website": {
+      "type": "string"
+    },
+    "booking_url": {
+      "type": "string"
+    },
+    "source_url": {
+      "type": "string"
+    },
+    "source_provenance": {
+      "type": "string"
+    },
+    "dedup_key": {
+      "type": "string",
+      "description": "Durable identity key: official domain + normalized name + rounded coordinates."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "accepted",
+        "rejected",
+        "duplicate"
+      ],
+      "default": "pending"
+    },
+    "private_reason": {
+      "type": "string",
+      "description": "Admin-only audit reason. Never exposed to players."
+    },
+    "evidence_json": {
+      "type": "string",
+      "description": "Admin-only serialized check results and corroboration evidence."
+    },
+    "photos_json": {
+      "type": "string",
+      "description": "Serialized accepted official-photo URLs for this candidate."
+    },
+    "listing_id": {
+      "type": "string"
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "job_id",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
