@@ -1,9 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.54';
 import { secrets } from 'base44:runtime';
-import { geocode } from '../../shared/googlePlaces.ts';
-import { fetchSourceDocument } from '../../shared/automatedVerification.ts';
-import { isTrustedSourceUrl } from '../../shared/publicListingPolicy.ts';
-import { isBlockedHost } from '../../shared/photoValidation.ts';
 import {
   SHERMAN_IMPORT_CENTER,
   DEFAULT_OPENAI_MODEL,
@@ -14,16 +10,12 @@ import {
   clampMaxCandidates,
   decodePlannedQuery,
   encodePlannedQuery,
-  normalizeWebsiteUrl,
   planQueryPlan,
   callOpenAIWebSearch,
   assertApiKeyPresent,
 } from '../../shared/openaiDiscovery.ts';
-import {
-  collectVerifiedPhotos,
-  evaluateLead,
-  extractOfficialBookingUrl,
-} from '../../shared/officialSourceVerification.ts';
+import { collectVerifiedPhotos } from '../../shared/officialSourceVerification.ts';
+import { verifyLeadAgainstOfficialSource } from '../../shared/candidateVerification.ts';
 import { COST_CAP_USD, estimateJobCost } from '../../shared/usageBudget.ts';
 
 // ============================================================
@@ -375,36 +367,25 @@ export default async function (req) {
         }
 
         try {
-          const website = normalizeWebsiteUrl(lead.website);
-          let doc: any = null;
-
-          if (website && isTrustedSourceUrl(website) && !isBlockedHost(website) && step.source_fetches < MAX_SOURCE_FETCHES_PER_QUERY) {
-            doc = await fetchSourceDocument(website);
-            step.source_fetches++;
-          }
-
-          // Keep the full geocoding result: the canonical postal code and
-          // street line must be confirmed by the official page.
-          let geocoded: any = null;
-          if (geocodeKey && lead.address) {
-            const g = await geocode(geocodeKey, String(lead.address)).catch(() => null);
-            if (g && typeof g.lat === 'number' && typeof g.lng === 'number') geocoded = g;
-          }
-
-          const evaluation = evaluateLead({
+          // Fetch the official page, resolve a real street address for the
+          // lead (leads often arrive with none), then run every gate.
+          const verified = await verifyLeadAgainstOfficialSource({
             lead,
-            pageText: doc?.ok ? doc.text : '',
-            html: doc?.ok ? doc.html : '',
-            sourceUrl: website,
-            finalUrl: doc?.ok ? doc.finalUrl : website,
+            placesKey: geocodeKey,
             center: SHERMAN_IMPORT_CENTER,
             radiusMi: Number(job.radius_miles) || 30,
             existingListings,
-            geocoded,
             searchEvidenceUrls: ai.evidence_urls,
             jobId: job.id,
-            bookingUrl: doc?.ok ? extractOfficialBookingUrl(doc.html, doc.finalUrl) : '',
+            canFetchSource: step.source_fetches < MAX_SOURCE_FETCHES_PER_QUERY,
           });
+
+          const website = verified.website;
+          const doc = verified.doc;
+          const evaluation = verified.evaluation;
+          const resolvedLead = verified.lead;
+          if (doc?.ok) step.source_fetches++;
+          let geocoded = verified.resolved?.geocoded || null;
 
           const duplicateInJob = asItems(
             await base44.asServiceRole.entities.DiscoveryCandidate
@@ -426,9 +407,9 @@ export default async function (req) {
             job_id: job.id,
             name: typeof lead.name === 'string' ? lead.name : '',
             discovery_category: evaluation.discoveryCategory,
-            city: typeof lead.city === 'string' ? lead.city : '',
-            state: typeof lead.state === 'string' ? lead.state : '',
-            address: typeof lead.address === 'string' ? lead.address : '',
+            city: typeof resolvedLead.city === 'string' ? resolvedLead.city : '',
+            state: typeof resolvedLead.state === 'string' ? resolvedLead.state : '',
+            address: typeof resolvedLead.address === 'string' ? resolvedLead.address : '',
             latitude: evaluation.coordinates?.lat ?? null,
             longitude: evaluation.coordinates?.lng ?? null,
             distance_miles: evaluation.distanceMiles ?? null,
@@ -458,6 +439,9 @@ export default async function (req) {
                   }
                 : null,
               coordinate_source: 'google_geocoding_official_address',
+              address_resolution: verified.resolved
+                ? { method: verified.resolved.method, address: verified.resolved.address }
+                : null,
             }).slice(0, 9000),
             photos_json: '[]',
             verified_at: now,

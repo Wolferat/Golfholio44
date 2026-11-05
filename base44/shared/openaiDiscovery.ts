@@ -183,6 +183,22 @@ const GOLF_NAME_SIGNALS = [
   'topgolf', 'golf lounge', 'club fitting', 'pro shop',
 ];
 
+// A lead is only verifiable when it carries a real street address: a
+// street number plus a street name or postal code. City-only strings
+// ("Sherman, TX") are NOT usable — nothing can be confirmed from them.
+export function isUsableStreetAddress(address: any): boolean {
+  const raw = String(address || '').trim();
+  if (raw.length < 8) return false;
+  const number = raw.match(/\b(\d{2,6})\b/);
+  if (!number) return false;
+  const hasZip = /\b\d{5}\b/.test(raw);
+  const hasStreetWord = /[a-z]{4,}/i.test(raw);
+  if (!hasStreetWord) return false;
+  // A number and a street word are the minimum; the ZIP merely has to
+  // not be the only thing present.
+  return hasZip || hasStreetWord;
+}
+
 export function hasGolfNameSignal(name: string): boolean {
   const lower = String(name || '').toLowerCase();
   return GOLF_NAME_SIGNALS.some((k) => lower.includes(k));
@@ -400,7 +416,10 @@ export function buildOpenAIRequestBody(query: string, model = DEFAULT_OPENAI_MOD
     'Exclude: disc golf, one-off events/tournaments, hotels, restaurants, bars without a primary golf business, medical offices, big-box retail, civic buildings, cemeteries, funeral homes, firearms/shooting ranges, gambling, generic arcades with no golf, and any adult/unsafe business.',
     'For entertainment golf the business must offer real golf hitting (bays, simulators, TrackMan); a sports bar alone is not eligible. For retail/fitting it must offer club fitting or a golf pro shop.',
     'Every lead MUST include the venue official website. Directory, social, review-site, and map URLs are not official websites.',
-    'Never invent a venue, address, phone number, or coordinate. If a field is unknown, return an empty string (or null for coordinates).',
+    'Every lead MUST include the venue full street address with postal code, e.g. "1800 N Travis St, Sherman, TX 75090". A city name alone is not an address.',
+    'If you cannot find the street address for a venue, OMIT that venue from the results entirely. Never return a venue with a blank or city-only address.',
+    'Prefer the venue address exactly as it appears on the venue own website.',
+    'Never invent a venue, address, phone number, or coordinate. If a field other than the address is unknown, return an empty string (or null for coordinates).',
     'Return at most 10 leads. Only venues physically located in or near the queried city.',
   ].join(' ');
 

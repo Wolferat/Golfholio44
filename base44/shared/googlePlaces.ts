@@ -38,6 +38,36 @@ export async function geocode(key, address) {
   };
 }
 
+// Resolve a venue's canonical street address by name + city + state.
+// Used only to source/geocode an address for a discovery lead — never
+// as evidence that a venue is real or is a golf business.
+export async function findPlaceAddress(key, name, city, state) {
+  const input = [name, city, state].filter(Boolean).join(', ').trim();
+  if (!key || !input) return null;
+  const params = new URLSearchParams({
+    input,
+    inputtype: 'textquery',
+    fields: 'place_id,name,formatted_address,geometry,address_components',
+    key,
+  });
+  const res = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?${params}`);
+  const data = await res.json();
+  if (data.status !== 'OK' || !data.candidates?.length) return null;
+  const c = data.candidates[0];
+  const components = c.address_components || [];
+  return {
+    place_id: c.place_id || '',
+    name: c.name || '',
+    formatted_address: c.formatted_address || '',
+    postal_code: component(components, 'postal_code') || '',
+    street_line: [component(components, 'street_number'), component(components, 'route')].filter(Boolean).join(' '),
+    city: component(components, 'locality') || component(components, 'postal_town') || '',
+    state: component(components, 'administrative_area_level_1') || '',
+    lat: c.geometry?.location?.lat ?? null,
+    lng: c.geometry?.location?.lng ?? null,
+  };
+}
+
 export async function nearbySearch(key, lat, lng, radiusM, type, keyword) {
   const params = new URLSearchParams({ location: `${lat},${lng}`, radius: String(radiusM), key });
   if (type) params.set('type', type);
