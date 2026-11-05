@@ -65,9 +65,11 @@ export default function AdminShermanImport() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [keyBlocked, setKeyBlocked] = useState(false);
   const [radius, setRadius] = useState(30);
   const [maxCalls, setMaxCalls] = useState(24);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [previewNonce, setPreviewNonce] = useState(0);
   const stopRef = useRef(false);
 
   useEffect(() => {
@@ -81,14 +83,23 @@ export default function AdminShermanImport() {
           setError('');
         }
       } catch (e) {
-        if (!cancelled) setError(errText(e));
+        if (!cancelled) {
+          const text = errText(e);
+          // An unset secret blocks the function before it runs.
+          if (/secret|OPENAI_API_KEY/i.test(text)) {
+            setKeyBlocked(true);
+            setError('');
+          } else {
+            setError(text);
+          }
+        }
       }
       if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [radius, maxCalls]);
+  }, [radius, maxCalls, previewNonce]);
 
   const summary = useMemo(() => {
     if (!job?.summary_json) return null;
@@ -104,6 +115,7 @@ export default function AdminShermanImport() {
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   const running = busy || (job && !TERMINAL.has(job.status));
   const openaiReady = preview?.openai_configured === true;
+  const showKeyBanner = keyBlocked || (!openaiReady && !loading);
 
   const runImport = async () => {
     setConfirmOpen(false);
@@ -135,7 +147,7 @@ export default function AdminShermanImport() {
     } catch (e) {
       const text = errText(e);
       setError(
-        String(text).includes('missing_openai_key')
+        /missing_openai_key|secret|OPENAI_API_KEY/i.test(String(text))
           ? 'OPENAI_API_KEY is not configured. Add it in Base44 Secrets first.'
           : text
       );
@@ -167,7 +179,7 @@ export default function AdminShermanImport() {
 
   return (
     <div className="space-y-4">
-      {!openaiReady && !loading && (
+      {showKeyBanner && (
         <div className="rounded-xl border border-rating/30 bg-rating/10 p-3 flex gap-2">
           <AlertTriangle className="h-4 w-4 text-rating shrink-0 mt-0.5" />
           <div className="text-xs text-muted-foreground">
@@ -277,7 +289,7 @@ export default function AdminShermanImport() {
               variant="secondary"
               className="h-11 flex-1"
               disabled={loading || running}
-              onClick={() => setRadius((r) => r)}
+              onClick={() => setPreviewNonce((n) => n + 1)}
             >
               <RefreshCw className="h-4 w-4" /> Dry run
             </Button>

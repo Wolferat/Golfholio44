@@ -307,7 +307,7 @@ export default async function (req) {
           status: 'failed',
           last_error: `openai_failed: ${ai.reason}`,
         };
-        const failed = await base44.asServiceRole.entities.DiscoveryJob.update(job.id, patch);
+        await base44.asServiceRole.entities.DiscoveryJob.update(job.id, patch);
         const finalized = await finalizeJob(
           base44,
           { ...job, ...patch },
@@ -468,19 +468,24 @@ export default async function (req) {
         }
       }
 
-      // Re-read the job so counters reflect the authoritative stored values.
-      const latest = await base44.asServiceRole.entities.DiscoveryJob.get(job.id);
-      const nextIndex = Number(latest.query_index) || 0;
-      const callsUsed = Number(latest.openai_calls_used) || 0;
-
-      const deltas = {
-        source_fetches_used: (Number(latest.source_fetches_used) || 0) + step.source_fetches,
-        candidates_found: (Number(latest.candidates_found) || 0) + step.accepted + step.pending + step.rejected + step.duplicate,
-        accepted_count: (Number(latest.accepted_count) || 0) + step.accepted,
-        pending_count: (Number(latest.pending_count) || 0) + step.pending,
-        rejected_count: (Number(latest.rejected_count) || 0) + step.rejected,
-        duplicate_count: (Number(latest.duplicate_count) || 0) + step.duplicate,
+      // Absolute checkpoint values computed from the job as loaded at
+      // the start of this step, so the checkpoint always advances.
+      const patch = {
+        openai_calls_used: (Number(job.openai_calls_used) || 0) + 1,
+        openai_input_tokens: (Number(job.openai_input_tokens) || 0) + (ai.usage.input_tokens || 0),
+        openai_output_tokens: (Number(job.openai_output_tokens) || 0) + (ai.usage.output_tokens || 0),
+        query_index: (Number(job.query_index) || 0) + 1,
+        truncated_leads: (Number(job.truncated_leads) || 0) + step.leads_truncated,
+        source_fetches_used: (Number(job.source_fetches_used) || 0) + step.source_fetches,
+        candidates_found: (Number(job.candidates_found) || 0) + step.accepted + step.pending + step.rejected + step.duplicate,
+        accepted_count: (Number(job.accepted_count) || 0) + step.accepted,
+        pending_count: (Number(job.pending_count) || 0) + step.pending,
+        rejected_count: (Number(job.rejected_count) || 0) + step.rejected,
+        duplicate_count: (Number(job.duplicate_count) || 0) + step.duplicate,
       };
+
+      const nextIndex = patch.query_index;
+      const callsUsed = patch.openai_calls_used;
 
       let nextStatus = 'running';
       let note = '';
@@ -490,26 +495,27 @@ export default async function (req) {
       } else if (nextIndex >= planned.length) {
         nextStatus = 'completed';
         note = 'all planned queries processed';
-      } else if (callsUsed >= (Number(latest.max_openai_calls) || 0)) {
+      } else if (callsUsed >= (Number(job.max_openai_calls) || 0)) {
         nextStatus = 'completed_with_ceiling';
         note = 'OpenAI call ceiling reached; unrun queries are reported in the summary';
       }
 
       const patched = await base44.asServiceRole.entities.DiscoveryJob.update(job.id, {
-        ...deltas,
+        ...patch,
         status: nextStatus,
         last_error: step.errors.length > 0 ? step.errors.join(' | ').slice(0, 500) : '',
       });
 
+      const nextJob = { ...job, ...patch, status: nextStatus };
       const finalJob = TERMINAL.has(nextStatus)
-        ? await finalizeJob(base44, { ...patched, ...deltas }, nextStatus, note)
+        ? await finalizeJob(base44, nextJob, nextStatus, note)
         : patched;
 
       return Response.json({
         job: finalJob,
         terminal: TERMINAL.has(nextStatus),
         step,
-        summary: await buildSummary(base44, { ...patched, ...deltas }, nextStatus, note),
+        summary: await buildSummary(base44, nextJob, nextStatus, note),
         candidates: await loadJobCandidates(base44, job.id),
       });
     }

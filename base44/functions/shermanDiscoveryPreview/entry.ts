@@ -62,14 +62,16 @@ export default async function (req) {
       }
     }
 
-    // Presence only — the key value is never read, logged, or returned.
+    // Presence only — key values are never read, logged, or returned.
     const openaiConfigured = !!secrets.get('OPENAI_API_KEY');
+    const geocodingConfigured = !!secrets.get('GOOGLE_PLACES_API_KEY');
 
     return Response.json({
       dry_run: true,
       no_api_calls_made: true,
       no_writes_made: true,
       openai_configured: openaiConfigured,
+      geocoding_configured: geocodingConfigured,
       openai_model: DEFAULT_OPENAI_MODEL,
       center: {
         label: SHERMAN_IMPORT_CENTER.label,

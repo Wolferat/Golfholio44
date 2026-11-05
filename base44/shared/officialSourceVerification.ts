@@ -277,6 +277,13 @@ export function evaluateLead(input: LeadEvaluationInput): LeadEvaluationResult {
     return deny('pending', `official page did not corroborate venue: ${corroboration.reason}`, { corroboration });
   }
 
+  const leadCity = String(lead.city || '').trim();
+  if (leadCity && !String(input.pageText || '').toLowerCase().includes(leadCity.toLowerCase())) {
+    add('city_supported', false, 'official page does not confirm the venue city');
+    return deny('pending', 'official page does not confirm the venue city', { corroboration });
+  }
+  add('city_supported', true);
+
   if (!category) {
     add('category_verified', false, 'ambiguous category');
     return deny('pending', 'ambiguous category', { corroboration });

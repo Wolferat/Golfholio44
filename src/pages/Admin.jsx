@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 import AuditTable from '@/components/golf/AuditTable';
 import AdminReviews from '@/components/golf/AdminReviews';
+import AdminShermanImport from '@/components/golf/AdminShermanImport';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -77,6 +78,7 @@ export default function Admin() {
     { key: 'auditTable', label: 'Audit Table', count: null },
     { key: 'photos', label: 'Photos', count: photos.length },
     { key: 'listings', label: 'Flagged', count: flagged.length },
+    { key: 'import', label: 'Sherman Import', count: null },
     { key: 'metrics', label: 'Metrics', count: null },
   ];
 
@@ -170,6 +172,8 @@ export default function Admin() {
         <AdminReviews reviews={reviewQueue} onAction={handleReviewAction} />
       ) : tab === 'metrics' ? (
         <MetricsView metrics={metrics} />
+      ) : tab === 'import' ? (
+        <AdminShermanImport />
       ) : (
         flagged.length === 0 ? (
           <EmptyState icon={ShieldCheck} title="No flagged listings" subtitle="Everything looks clean." />
