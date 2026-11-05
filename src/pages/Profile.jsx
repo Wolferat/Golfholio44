@@ -36,6 +36,11 @@ export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  // New accounts land here with ?setup=1 so they finish setting up their
+  // account straight after signing up.
+  const [setupMode, setSetupMode] = useState(
+    () => new URLSearchParams(window.location.search).get('setup') === '1'
+  );
 
   const isAdmin = user?.role === 'admin';
   const initials = (user?.full_name || user?.email || '?').slice(0, 2).toUpperCase();
@@ -55,9 +60,18 @@ export default function Profile() {
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
+  useEffect(() => {
+    if (loading || profile || !setupMode) return;
+    setEditorOpen(true);
+  }, [loading, profile, setupMode]);
+
   const handleProfileSaved = (updated) => {
     setProfile({ ...profile, ...updated });
     setEditorOpen(false);
+    if (setupMode) {
+      setSetupMode(false);
+      navigate('/profile', { replace: true });
+    }
     loadProfile();
   };
 
@@ -170,6 +184,7 @@ export default function Profile() {
         onClose={() => setEditorOpen(false)}
         profile={profile}
         onSaved={handleProfileSaved}
+        title={setupMode ? 'Set up your account' : undefined}
       />
       <AvatarPicker
         open={avatarPickerOpen}

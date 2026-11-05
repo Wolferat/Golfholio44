@@ -5,6 +5,7 @@ import {
   evaluatePublicListing,
   publicPhoto,
   EVENT_TYPES,
+  MAX_RADIUS_MI,
 } from '../../shared/publicListingPolicy.ts';
 import { evaluateTournamentListing, TOURNAMENT_TYPES } from '../../shared/tournamentPolicy.ts';
 
@@ -27,9 +28,9 @@ export default async function (req) {
     const near = (body.near || '').trim();
     const requestedRadius = Number(body.radius) || 15;
 
-    // Server-side radius validation: 15 default, 30 max.
-    // The client cannot request 31+ miles or bypass the 15/30 rule.
-    const radius = Math.min(Math.max(requestedRadius, 1), 30);
+    // Server-side radius validation: 15 default, 100 max.
+    // The client cannot request more than the server allows.
+    const radius = Math.min(Math.max(requestedRadius, 1), MAX_RADIUS_MI);
 
     // Player location is REQUIRED. No silent default to any fixed city.
     let centerLat = null;

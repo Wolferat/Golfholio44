@@ -16,7 +16,7 @@ import { savePlayerProfile } from '@/lib/golfData';
 // but the server is the authoritative validator.
 // ============================================================
 
-export default function ProfileEditor({ open, onClose, profile, onSaved }) {
+export default function ProfileEditor({ open, onClose, profile, onSaved, title }) {
   const { toast } = useToast();
   const [username, setUsername] = useState(profile?.username || '');
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
@@ -55,7 +55,7 @@ export default function ProfileEditor({ open, onClose, profile, onSaved }) {
   return (
     <BottomSheet open={open} onClose={onClose} maxHeight="88dvh">
       <div className="px-5 pt-1 pb-[calc(1.25rem+env(safe-area-inset-bottom))] space-y-4">
-        <h2 className="text-lg font-bold">Edit your profile</h2>
+        <h2 className="text-lg font-bold">{title || 'Edit your profile'}</h2>
 
         {/* Username */}
         <div>

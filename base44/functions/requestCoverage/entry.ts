@@ -2,6 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 import { secrets } from 'base44:runtime';
 import { geocode, haversineMi } from '../../shared/googlePlaces.ts';
 import { areaKey, isWithinPlayerRateLimit, safeCoverageStatus, FRESHNESS_WINDOW_MS } from '../../shared/coverageArea.ts';
+import { MAX_RADIUS_MI } from '../../shared/publicListingPolicy.ts';
 
 // ============================================================
 // requestCoverage — player-facing.
@@ -29,7 +30,8 @@ export default async function (req) {
     const near = (body.near || '').trim();
     const city = (body.city || '').trim();
     const state = (body.state || '').trim();
-    const radius = Math.min(Math.max(Number(body.radius) || 15, 1), 30);
+    // Player search radius — matches what the feed itself accepts.
+    const radius = Math.min(Math.max(Number(body.radius) || 15, 1), MAX_RADIUS_MI);
 
     // Resolve coordinates from near if lat/lng not provided
     if ((lat == null || lng == null) && near) {

@@ -20,9 +20,11 @@ import { getListings, searchListings, getTournaments, searchTournaments, toggleF
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/AuthContext';
 import { useGate } from '@/components/golf/GateProvider';
-import { useGolfLocation } from '@/hooks/useGolfLocation';
+import { useGolfLocation, RADIUS_OPTIONS } from '@/hooks/useGolfLocation';
 import { useNavVisibility } from '@/components/golf/NavVisibilityContext';
 import { cn } from '@/lib/utils';
+
+const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
 
 const CATEGORIES = [
   { key: 'all', label: 'All' },
@@ -91,7 +93,16 @@ export default function Explore() {
           query ? searchListings(query, category, locParam) : getListings(category, locParam),
           getLiveTournaments(locParam),
         ]);
-        setItems(data);
+        // A wide search includes tournaments: "All" returns every verified
+        // venue AND event within the radius, nearest first.
+        if (category === 'all') {
+          const seen = new Set(data.map((i) => i.id));
+          const merged = [...data, ...tour.filter((t) => !seen.has(t.id))];
+          merged.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+          setItems(merged);
+        } else {
+          setItems(data);
+        }
         setTournaments(tour);
       }
     } catch {
@@ -240,26 +251,26 @@ export default function Explore() {
           locating={loc.locating}
         />
 
-        {/* 30-mile expansion — temporary for this session only */}
-        {loc.hasLocation && !loc.radiusExpanded && (
-          <div className="px-4 mt-2">
-            <button
-              onClick={loc.expandRadius}
-              className="w-full h-10 rounded-xl glass-card border border-border text-sm font-medium text-primary flex items-center justify-center gap-2"
-            >
-              Search up to 30 miles
-            </button>
-          </div>
-        )}
-        {loc.radiusExpanded && (
-          <div className="px-4 mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Showing results within 30 miles</span>
-            <button
-              onClick={loc.resetRadius}
-              className="text-xs font-semibold text-primary"
-            >
-              Reset to 15 mi
-            </button>
+        {/* Search radius — venues and tournaments use the same distance */}
+        {loc.hasLocation && (
+          <div className="px-4 mt-2 flex items-center gap-2">
+            <span className="text-xs text-muted-foreground shrink-0">Within</span>
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+              {RADIUS_OPTIONS.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => loc.setRadiusValue(r)}
+                  className={cn(
+                    'h-9 px-3 rounded-full text-xs font-semibold border shrink-0 transition',
+                    loc.radius === r
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'glass-card text-foreground border-border'
+                  )}
+                >
+                  {r} mi
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -305,7 +316,7 @@ export default function Explore() {
               <div className="flex items-end justify-between mb-1">
                 <h2 className="text-xl font-extrabold tracking-tight">{category === 'tournament' ? 'Tournaments near you' : 'Near you now'}</h2>
                 <span className="text-xs text-muted-foreground">
-                  {loc.coords ? 'Near you' : 'Within 15 miles'}
+                  Within {loc.radius} miles
                 </span>
               </div>
               <motion.div initial={{ width: 0 }} animate={{ width: 56 }} transition={{ duration: 1, ease: 'easeOut' }} className="h-0.5 bg-primary rounded-full mb-3" />
@@ -339,7 +350,7 @@ export default function Explore() {
                   )}
                   <div className="grid grid-cols-1 gap-3.5">
                     {items.map((item, i) => (
-                      category === 'tournament' ? (
+                      (category === 'tournament' || EVENT_TYPES.has(item.type)) ? (
                         <TournamentCard
                           key={item.id}
                           item={item}

@@ -24,14 +24,18 @@ function extractCityState(result) {
   const city =
     components.find((c) => c.types.includes('locality'))?.long_name ||
     components.find((c) => c.types.includes('postal_town'))?.long_name ||
+    components.find((c) => c.types.includes('sublocality_level_1'))?.long_name ||
+    components.find((c) => c.types.includes('administrative_area_level_3'))?.long_name ||
     components.find((c) => c.types.includes('administrative_area_level_2'))?.long_name ||
     '';
   const state =
     components.find((c) => c.types.includes('administrative_area_level_1'))?.short_name ||
     '';
+  const zip =
+    components.find((c) => c.types.includes('postal_code'))?.short_name || '';
   const lat = result.geometry?.location?.lat ?? null;
   const lng = result.geometry?.location?.lng ?? null;
-  return { city, state, lat, lng };
+  return { city, state, lat, lng, zip };
 }
 
 export default async function (req) {
@@ -58,8 +62,14 @@ export default async function (req) {
       // Reverse geocode
       url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${key}`;
     } else if (query) {
-      // Forward geocode (city name or ZIP)
-      url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${key}`;
+      // Forward geocode (city name or ZIP).
+      // A bare ZIP is not reliable as a free-text address — Google returns
+      // ZERO_RESULTS for many valid ZIPs (90210 among them). A ZIP is
+      // therefore geocoded as a postal-code component scoped to the US.
+      const zip5 = query.match(/^(\d{5})(-\d{4})?$/)?.[1];
+      url = zip5
+        ? `https://maps.googleapis.com/maps/api/geocode/json?components=${encodeURIComponent(`postal_code:${zip5}|country:US`)}&key=${key}`
+        : `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${key}`;
     } else {
       return Response.json({ error: 'Provide lat/lng or query' }, { status: 400 });
     }
@@ -78,17 +88,21 @@ export default async function (req) {
     const seen = new Set();
     const results = [];
     for (const r of data.results) {
-      const { city, state, lat: rLat, lng: rLng } = extractCityState(r);
-      if (!city || !state || rLat == null || rLng == null) continue;
-      const key2 = `${city}|${state}`.toLowerCase();
+      const { city, state, lat: rLat, lng: rLng, zip } = extractCityState(r);
+      // A ZIP may resolve to an area with no locality name; the ZIP itself
+      // is then the location label so the player can still pick it.
+      const cityLabel = city || zip;
+      if (!cityLabel || !state || rLat == null || rLng == null) continue;
+      const key2 = `${cityLabel}|${state}`.toLowerCase();
       if (seen.has(key2)) continue;
       seen.add(key2);
       results.push({
-        city,
+        city: cityLabel,
         state,
+        zip: zip || null,
         lat: rLat,
         lng: rLng,
-        displayName: `${city}, ${state}`,
+        displayName: city ? `${city}, ${state}` : `ZIP ${zip}, ${state}`,
       });
     }
 

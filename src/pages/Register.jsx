@@ -46,7 +46,10 @@ export default function Register() {
       if (result?.access_token) {
         base44.auth.setToken(result.access_token);
       }
-      window.location.href = safeReturnTo();
+      // A brand-new player goes straight to setting up their account
+      // (player profile) unless they were headed somewhere specific.
+      const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+      window.location.href = returnTo ? safeReturnTo() : "/profile?setup=1";
     } catch (err) {
       setError(err.message || "Invalid verification code");
     } finally {
@@ -68,7 +71,10 @@ export default function Register() {
   };
 
   const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", safeReturnTo());
+    // A first-time Google sign-in creates the account, so it also lands on
+    // account setup unless a specific destination was requested.
+    const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+    base44.auth.loginWithProvider("google", returnTo ? safeReturnTo() : "/profile?setup=1");
   };
 
   if (showOtp) {

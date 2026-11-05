@@ -6,6 +6,7 @@ import {
   formatTournamentDto,
   TOURNAMENT_TYPES,
 } from '../../shared/tournamentPolicy.ts';
+import { MAX_RADIUS_MI } from '../../shared/publicListingPolicy.ts';
 
 // ============================================================
 // getTournaments — server-side tournament search endpoint.
@@ -35,7 +36,7 @@ export default async function (req) {
     const lng = body.lng != null ? Number(body.lng) : null;
     const near = (body.near || '').trim();
     const requestedRadius = Number(body.radius) || 15;
-    const radius = Math.min(Math.max(requestedRadius, 1), 30);
+    const radius = Math.min(Math.max(requestedRadius, 1), MAX_RADIUS_MI);
 
     // Player location is REQUIRED — no silent default.
     let centerLat = null;

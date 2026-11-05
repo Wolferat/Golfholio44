@@ -8,7 +8,11 @@
 
 const RADIUS_MI = 15;
 export const DEFAULT_RADIUS_MI = 15;
-export const MAX_RADIUS_MI = 30;
+// Player-chosen search radius. The feed is a distance filter, not a trust
+// rule, so a wider search never weakens any eligibility check — it only
+// shows verified listings that are farther away.
+export const MAX_RADIUS_MI = 100;
+export const RADIUS_OPTIONS_MI = [15, 30, 50, 100];
 
 const EVENT_TYPES = new Set(['tournament', 'charity_event', 'corporate_event', 'league']);
 

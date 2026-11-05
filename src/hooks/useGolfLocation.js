@@ -4,6 +4,11 @@ import { base44 } from '@/api/base44Client';
 const CITY_KEY = 'golfolio_home_city';
 const STATE_KEY = 'golfolio_home_state';
 const COORDS_KEY = 'golfolio_home_coords';
+const RADIUS_KEY = 'golfolio_search_radius';
+
+export const RADIUS_OPTIONS = [15, 30, 50, 100];
+const DEFAULT_RADIUS = 15;
+const MAX_RADIUS = 100;
 
 // ============================================================
 // useGolfLocation — player location management.
@@ -16,8 +21,8 @@ const COORDS_KEY = 'golfolio_home_coords';
 // The Explore header shows the confirmed city and state — not
 // "Current location," "Near you," a raw ZIP, or an unverified guess.
 //
-// Radius: 15 default, 30 max. The expanded 30-mile radius is
-// temporary for one session and resets on location change or reload.
+// Radius: the player chooses 15, 30, 50 or 100 miles. The choice is
+// remembered across reloads and applies to venues and tournaments.
 // ============================================================
 
 export function useGolfLocation() {
@@ -33,8 +38,12 @@ export function useGolfLocation() {
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [radius, setRadius] = useState(15);
-  const [radiusExpanded, setRadiusExpanded] = useState(false);
+  const [radius, setRadius] = useState(() => {
+    try {
+      const raw = Number(localStorage.getItem(RADIUS_KEY));
+      return raw >= 1 && raw <= MAX_RADIUS ? raw : DEFAULT_RADIUS;
+    } catch { return DEFAULT_RADIUS; }
+  });
 
   // Deep-link support: if a `near` URL param is present (e.g. from a
   // coverage notification tap), parse "City,State" and resolve coords
@@ -111,8 +120,6 @@ export function useGolfLocation() {
         setLocationError(null);
         setLocating(false);
         setSheetOpen(false);
-        setRadius(15);
-        setRadiusExpanded(false);
       },
       () => {
         setLocating(false);
@@ -157,8 +164,6 @@ export function useGolfLocation() {
     try { await base44.auth.updateMe({ home_city: selected.city, home_state: selected.state }); } catch {}
     setLocationError(null);
     setSheetOpen(false);
-    setRadius(15);
-    setRadiusExpanded(false);
   }, []);
 
   const clearLocation = useCallback(() => {
@@ -166,30 +171,22 @@ export function useGolfLocation() {
     setState(null);
     setCoords(null);
     try { localStorage.removeItem(CITY_KEY); localStorage.removeItem(STATE_KEY); localStorage.removeItem(COORDS_KEY); } catch {}
-    setRadius(15);
-    setRadiusExpanded(false);
   }, []);
 
-  // One-time 30-mile expansion — temporary for this session only.
-  const expandRadius = useCallback(() => {
-    if (!radiusExpanded) {
-      setRadius(30);
-      setRadiusExpanded(true);
-    }
-  }, [radiusExpanded]);
-
-  const resetRadius = useCallback(() => {
-    setRadius(15);
-    setRadiusExpanded(false);
+  // Player-chosen search radius, persisted so it survives a reload.
+  const setRadiusValue = useCallback((next) => {
+    const r = Math.min(Math.max(Number(next) || DEFAULT_RADIUS, 1), MAX_RADIUS);
+    setRadius(r);
+    try { localStorage.setItem(RADIUS_KEY, String(r)); } catch {}
   }, []);
 
   // Display the confirmed city and state — not "Current location" or a raw ZIP.
   const label = city && state ? `${city}, ${state}` : (city || null);
-  const subtitle = radiusExpanded ? 'Within 30 miles' : 'Within 15 miles';
+  const subtitle = `Within ${radius} miles`;
 
   return {
     city, state, coords, locating, locationError, sheetOpen, setSheetOpen,
     useGps, searchLocation, confirmLocation, clearLocation, hasLocation,
-    label, subtitle, radius, radiusExpanded, expandRadius, resetRadius,
+    label, subtitle, radius, setRadiusValue,
   };
 }
